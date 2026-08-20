@@ -1,5 +1,7 @@
 # vger
 
+[![CI](https://github.com/jacob-rn-wallace/vger/actions/workflows/ci.yml/badge.svg)](https://github.com/jacob-rn-wallace/vger/actions/workflows/ci.yml)
+
 An HP-41-inspired native calculator system — not a hardware emulator.
 `vger` targets documented FOCAL behavior (the standard, published
 instruction/function set) on modern hardware, not byte-exact real-ROM

@@ -562,6 +562,14 @@ llvm` (macOS) to activate it.
 `VGER_ENABLE_STRICT_WARNINGS` (CMake option, default `ON`) can disable all
 of the above; there's no reason to, but it exists for bisection/debugging.
 
+`.github/workflows/ci.yml` runs this on every push/PR to `main`, on both
+Ubuntu and macOS: a full build+`ctest` run (harness included, with SDL2 and
+`clang-tidy` installed on the runner so both are actually exercised, not
+just locally optional), plus a second `-DVGER_BUILD_HARNESS=OFF` build to
+keep `core/`+`tests/`'s "zero dependencies beyond a C17 compiler" claim
+honest. Since `-Werror` is already on, a warning fails CI the same way a
+failing test does — there's no separate lint-only step.
+
 ## Building and testing
 
 ```sh
