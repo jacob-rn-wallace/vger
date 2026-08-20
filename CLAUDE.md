@@ -555,11 +555,17 @@ see what to avoid:
    satisfied by the existing hardware design — nothing to change, just
    don't compromise it later (e.g. by collapsing MENU onto a shift-layer
    of an existing key to save a physical key during firmware bring-up).
-2. **Every menu transition needs visible feedback — not implemented yet.**
-   Both reference systems flash instantly from one menu screen to the
-   next on selection, with no acknowledgment of what was just pressed and
-   no persistent sense of where you are in the menu tree relative to
-   where you were. Concretely, whatever renders the eventual menu layer
+2. **Every menu transition needs visible feedback, governed by one
+   consistent motion system — not implemented yet.** Both reference
+   systems flash instantly from one menu screen to the next on selection,
+   with no acknowledgment of what was just pressed and no persistent
+   sense of where you are in the menu tree relative to where you were.
+   The fix isn't "add some animations" bolted on per-screen — it's the
+   same move Material Design makes: define one small internal "physics
+   model" (easing curves, continuity rules, a fixed gesture vocabulary)
+   that governs *every* transition in the system uniformly, so the user
+   builds one intuition that transfers everywhere instead of re-learning
+   each screen. Concretely, whatever renders the eventual menu layer
    needs:
    - **Selection feedback** — the pressed softkey should visibly
      acknowledge the press (e.g. briefly highlight/invert its label)
@@ -573,6 +579,33 @@ see what to avoid:
    full-screen flash-to-next-menu is also the more expensive/visible
    thing to do on the actual hardware, not only the worse UX. A
    deliberate, visible transition is motivated on both fronts.
+
+   **Reference for what this motion system could look like:** Peng
+   Zhihui's (稚晖君's) MonoUI — an animation framework for monochrome
+   displays (OLED/VFD/e-Paper) licensed exclusively to Xikii for their
+   UltraLink product, never open-sourced; only demo video exists, no code
+   to read. [WouoUI](https://github.com/RQNG/WouoUI) is an unlicensed
+   (all-rights-reserved by default — same reference-only treatment as
+   Nonpareil/DB48X/C47 above, not a source to vendor) open tribute that
+   documents the actual technique in enough detail to be genuinely
+   useful as a study reference:
+   - Non-linear easing applied *uniformly* — lists, popups, even progress
+     bars — not just the primary selection indicator.
+   - **Interruptible, blending transitions**: triggering a new transition
+     before the current one finishes blends into the new target instead
+     of snapping/resetting. Likely the single biggest contributor to
+     "smooth" vs. DB48X/C47's instant flash-cuts.
+   - **Positional continuity** — the direct technique for the
+     "positional feedback" requirement above: a selection indicator's
+     size and position animate back to wherever it was last selected
+     when navigating back up a level, rather than resetting to the top.
+   - **One small, fixed gesture vocabulary reused at every depth** (in
+     WouoUI's rotary-encoder case: rotate to move selection, short-press
+     to select, long-press to go back up one level, every level) — the
+     same "one physics model everywhere" principle applied to input, not
+     just rendering. vger's own input model differs (4 shifted keys +
+     dedicated MENU, not a rotary encoder), but the principle — a fixed,
+     depth-independent gesture set — carries over directly.
 
 ## Coding conventions
 
