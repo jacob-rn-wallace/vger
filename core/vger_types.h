@@ -97,6 +97,8 @@ typedef enum {
     VGER_KEY_RCL,
     VGER_KEY_GTO,
     VGER_KEY_LBL,
+    VGER_KEY_XEQ,
+    VGER_KEY_RTN,
     VGER_KEY_END,
     VGER_KEY_RUN_STOP,
     VGER_KEY_SF,

@@ -76,15 +76,15 @@ Requires SDL2 (`brew install sdl2` on macOS) for the harness; `core/` and
 If `clang-tidy` is on `PATH` (e.g. `brew install llvm`), it's wired into
 the build automatically.
 
-## Milestone 1 scope
+## Scope
 
 Implements a bounded, documented-FOCAL subset: digit entry, ENTER^/CLX/
-X<>Y/LASTX, `+ - * /`/CHS, STO/RCL (direct), GTO/LBL/END with single-level
-R/S execution, SF/CF/FS?C on flags 00-29, ALPHA entry with ASTO/ARCL
-packing, and FIX/SCI/ENG. See `core/vger_interp.c`'s file comment for the
-specific simplifications this implies (append-only PRGM recording,
-synchronous R/S, non-digit-key-cancels-pending-argument). Explicitly
-deferred: XEQ/RTN subroutines, indirect addressing, matrix/complex data,
-BCD-faithful numeric semantics, byte-exact program memory accounting, the
-MENU/system-menu layer itself, and all Pico 2/display/keypad hardware
-bring-up.
+X<>Y/LASTX, `+ - * /`/CHS, STO/RCL (direct), GTO/LBL/END, XEQ/RTN
+subroutine calls (bounded call stack), R/S execution, SF/CF/FS?C on flags
+00-29, ALPHA entry with ASTO/ARCL packing, and FIX/SCI/ENG. See
+`core/vger_interp.c`'s file comment for the specific simplifications this
+implies (append-only PRGM recording, synchronous R/S,
+non-digit-key-cancels-pending-argument). Explicitly deferred: indirect
+addressing, matrix/complex data, BCD-faithful numeric semantics,
+byte-exact program memory accounting, the MENU/system-menu layer itself,
+and all Pico 2/display/keypad hardware bring-up.

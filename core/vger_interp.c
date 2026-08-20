@@ -43,6 +43,7 @@ static const vger_arg_spec_entry_t VGER_ARG_SPECS[] = {
     {VGER_KEY_FS_QUESTION_C, VGER_STEP_OPCODE_FLAG_ARG, 2},
     {VGER_KEY_LBL, VGER_STEP_OPCODE_LABEL_ARG, 2},
     {VGER_KEY_GTO, VGER_STEP_OPCODE_LABEL_ARG, 2},
+    {VGER_KEY_XEQ, VGER_STEP_OPCODE_LABEL_ARG, 2},
     {VGER_KEY_FIX, VGER_STEP_OPCODE_DIGITS_ARG, 1},
     {VGER_KEY_SCI, VGER_STEP_OPCODE_DIGITS_ARG, 1},
     {VGER_KEY_ENG, VGER_STEP_OPCODE_DIGITS_ARG, 1},
@@ -52,9 +53,9 @@ static const vger_arg_spec_entry_t VGER_ARG_SPECS[] = {
 /** @brief Result of executing one instruction; tells the caller (a direct
  *  keypress commit, or the R/S run loop) what control-flow to apply. */
 typedef struct {
-    bool jumped; /**< io_current_line was set directly (GTO); don't also increment it. */
+    bool jumped; /**< io_current_line was set directly (GTO/XEQ/RTN); don't also increment it. */
     bool skip_next; /**< The following program step should be skipped. */
-    bool halt; /**< Execution should stop (END or R/S encountered). */
+    bool halt; /**< Execution should stop (END, R/S, empty-stack RTN, or call-stack overflow). */
 } vger_exec_result_t;
 
 static vger_exec_result_t vger_execute_step(vger_state_t *state, const vger_program_step_t *step, int *io_current_line);
@@ -250,6 +251,42 @@ static void vger_handle_backspace(vger_state_t *state)
 }
 
 /* ---------------------------------------------------------------------- */
+/* Call stack helpers (XEQ/RTN)                                           */
+/* ---------------------------------------------------------------------- */
+
+/** @brief Push return_line onto the subroutine call stack.
+ *  @return false if the stack is already at VGER_CALL_STACK_MAX_DEPTH
+ *          (caller halts rather than corrupting state - see
+ *          VGER_CALL_STACK_MAX_DEPTH's doc comment). */
+static bool vger_call_stack_push(vger_state_t *state, int return_line)
+{
+    VGER_ASSERT(state != NULL);
+    VGER_ASSERT(state->call_stack_depth >= 0);
+    if (state->call_stack_depth >= VGER_CALL_STACK_MAX_DEPTH) {
+        return false;
+    }
+    state->call_stack[state->call_stack_depth] = return_line;
+    state->call_stack_depth++;
+    VGER_ASSERT(state->call_stack_depth <= VGER_CALL_STACK_MAX_DEPTH);
+    return true;
+}
+
+/** @brief Pop the most recent return address into *out_line.
+ *  @return false if the stack is empty (caller treats RTN like END). */
+static bool vger_call_stack_pop(vger_state_t *state, int *out_line)
+{
+    VGER_ASSERT(state != NULL);
+    VGER_ASSERT(out_line != NULL);
+    if (state->call_stack_depth <= 0) {
+        return false;
+    }
+    state->call_stack_depth--;
+    *out_line = state->call_stack[state->call_stack_depth];
+    VGER_ASSERT(state->call_stack_depth >= 0);
+    return true;
+}
+
+/* ---------------------------------------------------------------------- */
 /* Instruction commit (RUN: execute now; PRGM: record as a step)          */
 /* ---------------------------------------------------------------------- */
 
@@ -331,9 +368,10 @@ static void vger_handle_argument_digit_or_abort(vger_state_t *state, vger_key_ev
 /* Execution: shared by immediate keypress commit and the R/S run loop    */
 /* ---------------------------------------------------------------------- */
 
-static void vger_exec_opcode_only(vger_state_t *state, vger_key_id_t opcode, vger_exec_result_t *out)
+static void vger_exec_opcode_only(vger_state_t *state, vger_key_id_t opcode, int *io_current_line, vger_exec_result_t *out)
 {
     VGER_ASSERT(state != NULL);
+    VGER_ASSERT(io_current_line != NULL);
     VGER_ASSERT(out != NULL);
 
     switch (opcode) {
@@ -373,6 +411,16 @@ static void vger_exec_opcode_only(vger_state_t *state, vger_key_id_t opcode, vge
                                                           : ((x != 0.0) ? y / x : 0.0);
             vger_stack_drop(state);
             state->stack_lift_enabled = true;
+            break;
+        }
+        case VGER_KEY_RTN: {
+            int return_line;
+            if (vger_call_stack_pop(state, &return_line)) {
+                *io_current_line = return_line;
+                out->jumped = true;
+            } else {
+                out->halt = true; /* RTN with nothing to return to: same as END */
+            }
             break;
         }
         case VGER_KEY_END:
@@ -454,20 +502,28 @@ static void vger_exec_flag_arg(vger_state_t *state, vger_key_id_t opcode, int fl
     }
 }
 
+/** @brief GTO and XEQ both jump to a LBL target; XEQ additionally pushes
+ *  a return address (the line after this step) onto the call stack first,
+ *  so a later RTN resumes here. LBL itself is a marker, not an action. */
 static void vger_exec_label_arg(vger_state_t *state, vger_key_id_t opcode, int label, int *io_current_line, vger_exec_result_t *out)
 {
     VGER_ASSERT(state != NULL);
     VGER_ASSERT(io_current_line != NULL);
     VGER_ASSERT(out != NULL);
 
-    if (opcode != VGER_KEY_GTO) {
-        return; /* LBL itself is a marker, not an action */
+    if (opcode != VGER_KEY_GTO && opcode != VGER_KEY_XEQ) {
+        return;
     }
     int target = -1;
-    if (vger_program_find_label(&state->program, label, &target)) {
-        *io_current_line = target;
-        out->jumped = true;
+    if (!vger_program_find_label(&state->program, label, &target)) {
+        return;
     }
+    if (opcode == VGER_KEY_XEQ && !vger_call_stack_push(state, *io_current_line + 1)) {
+        out->halt = true; /* call-stack overflow: halt rather than corrupt state */
+        return;
+    }
+    *io_current_line = target;
+    out->jumped = true;
 }
 
 static void vger_exec_digits_arg(vger_state_t *state, vger_key_id_t opcode, int digits)
@@ -509,7 +565,7 @@ static vger_exec_result_t vger_execute_step(vger_state_t *state, const vger_prog
             }
             break;
         case VGER_STEP_OPCODE_ONLY:
-            vger_exec_opcode_only(state, step->opcode, &result);
+            vger_exec_opcode_only(state, step->opcode, io_current_line, &result);
             break;
         case VGER_STEP_OPCODE_REG_ARG:
             vger_exec_reg_arg(state, step->opcode, step->int_arg);
@@ -543,6 +599,7 @@ static void vger_run_program(vger_state_t *state)
 
     int line = (state->current_line >= 0) ? state->current_line : 0;
     state->program_running = true;
+    state->call_stack_depth = 0; /* a fresh top-level run starts with no pending subroutines */
     bool pending_skip = false;
 
     for (long steps = 0; steps < VGER_MAX_STEPS_PER_RUN; steps++) {

@@ -99,4 +99,7 @@ bool vger_get_is_awaiting_argument(const vger_state_t *state);
 int vger_get_current_line(const vger_state_t *state);
 int vger_get_program_step_count(const vger_state_t *state);
 
+/** @brief Number of pending XEQ subroutine calls (0-VGER_CALL_STACK_MAX_DEPTH). */
+int vger_get_call_stack_depth(const vger_state_t *state);
+
 #endif /* VGER_STATE_H */

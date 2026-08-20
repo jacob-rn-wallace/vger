@@ -70,6 +70,12 @@ struct vger_state {
     int current_line; /**< Index into program.steps; -1 if undefined. */
     bool program_running;
     long steps_executed_this_run;
+
+    /* XEQ/RTN subroutine return-address stack, bounded by
+     * VGER_CALL_STACK_MAX_DEPTH. call_stack[call_stack_depth - 1] is the
+     * top of stack. */
+    int call_stack[VGER_CALL_STACK_MAX_DEPTH];
+    int call_stack_depth;
 };
 
 #endif /* VGER_STATE_INTERNAL_H */

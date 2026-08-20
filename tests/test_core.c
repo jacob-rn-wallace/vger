@@ -184,6 +184,67 @@ static void test_program_run_via_text_load(void)
           "register 03 should be untouched (0): GTO 02 jumped over the STO 03 step");
 }
 
+static void test_xeq_rtn_subroutine(void)
+{
+    const char *name = "test_xeq_rtn_subroutine";
+    vger_state_t *state = vger_state_get();
+    vger_state_reset(state);
+
+    const char *source = "LBL 01\n"
+                          "5\n"
+                          "XEQ 02\n"
+                          "STO 00\n"
+                          "END\n"
+                          "LBL 02\n"
+                          "3\n"
+                          "+\n"
+                          "RTN\n";
+
+    vger_program_t program;
+    char err[128];
+    bool parsed = vger_program_parse_text(source, &program, err, sizeof(err));
+    CHECK(name, parsed, err);
+    if (!parsed) {
+        return;
+    }
+
+    vger_state_load_program(state, &program);
+    vger_press(state, VGER_KEY_RUN_STOP);
+
+    CHECK_NEAR(name, vger_get_storage_numeric(state, 0), 8.0,
+               "XEQ 02 should call the 5+3 subroutine and RTN should resume at STO 00");
+    CHECK(name, vger_get_call_stack_depth(state) == 0, "call stack should be empty again after RTN");
+}
+
+static void test_xeq_call_stack_overflow_halts(void)
+{
+    const char *name = "test_xeq_call_stack_overflow_halts";
+    vger_state_t *state = vger_state_get();
+    vger_state_reset(state);
+
+    /* Self-recursive XEQ with no base case: each call pushes a return
+     * address, so the call stack fills up and execution halts once it
+     * hits VGER_CALL_STACK_MAX_DEPTH, rather than corrupting state or
+     * running away (bounded by the step cap regardless). */
+    const char *source = "LBL 01\n"
+                          "XEQ 01\n"
+                          "END\n";
+
+    vger_program_t program;
+    char err[128];
+    bool parsed = vger_program_parse_text(source, &program, err, sizeof(err));
+    CHECK(name, parsed, err);
+    if (!parsed) {
+        return;
+    }
+
+    vger_state_load_program(state, &program);
+    vger_press(state, VGER_KEY_RUN_STOP);
+
+    CHECK(name, vger_get_call_stack_depth(state) == VGER_CALL_STACK_MAX_DEPTH,
+          "unbounded recursive XEQ should halt exactly at the call-stack depth cap");
+}
+
 static void test_prgm_mode_keystroke_recording(void)
 {
     const char *name = "test_prgm_mode_keystroke_recording";
@@ -243,6 +304,8 @@ int main(void)
     test_sto_rcl();
     test_asto_arcl();
     test_program_run_via_text_load();
+    test_xeq_rtn_subroutine();
+    test_xeq_call_stack_overflow_halts();
     test_prgm_mode_keystroke_recording();
     test_mode_policy_idle_only();
     test_out_of_band_reset();

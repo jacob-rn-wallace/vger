@@ -251,3 +251,10 @@ int vger_get_program_step_count(const vger_state_t *state)
     VGER_ASSERT(state != NULL);
     return state->program.step_count;
 }
+
+int vger_get_call_stack_depth(const vger_state_t *state)
+{
+    VGER_ASSERT(state != NULL);
+    VGER_ASSERT(state->call_stack_depth >= 0 && state->call_stack_depth <= VGER_CALL_STACK_MAX_DEPTH);
+    return state->call_stack_depth;
+}

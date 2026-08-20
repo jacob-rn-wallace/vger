@@ -49,4 +49,17 @@
 /** @brief Maximum characters in a rendered display string, including NUL. */
 #define VGER_DISPLAY_STRING_LEN 32
 
+/** @brief Maximum nested XEQ subroutine calls (the RTN return-address
+ *  stack depth).
+ *
+ * Real HP-41 subroutine nesting is memory-dependent, not a fixed spec
+ * number; milestone 1 doesn't model byte-exact program memory (see
+ * CLAUDE.md's "Program representation" section), so this is a deliberately
+ * chosen, named bound rather than a claimed hardware figure. XEQ beyond
+ * this depth halts the run (see vger_call_stack_push()) instead of
+ * silently corrupting state - the same "refuse rather than overflow"
+ * posture as VGER_MAX_STEPS_PER_RUN.
+ */
+#define VGER_CALL_STACK_MAX_DEPTH 8
+
 #endif /* VGER_CONFIG_H */

@@ -78,6 +78,8 @@ static void vger_print_keymap_legend(void)
     printf("  F5 F6 F7          SF   CF   FS?C       (each followed by 2 digits)\n");
     printf("  F8 F9             ASTO ARCL             (each followed by 2 digits)\n");
     printf("  F10 , ;           FIX  SCI  ENG        (each followed by 1 digit)\n");
+    printf("  X                 XEQ (followed by 2 digits; calls a subroutine)\n");
+    printf("  R                 RTN (returns from a subroutine)\n");
     printf("  Space             R/S (run program from current line)\n");
     printf("  P                 PRGM (toggle program-entry mode)\n");
     printf("  U                 USER (toggle, annunciator only in milestone 1)\n");
@@ -106,7 +108,8 @@ static void vger_print_state_dump(const vger_state_t *state)
     printf("mode=%s alpha_mode=%d user_mode=%d running=%d power=%d\n",
            vger_get_calc_mode(state) == VGER_CALC_MODE_PRGM ? "PRGM" : "RUN", ann.alpha_mode, ann.user_mode,
            ann.program_running, vger_get_power_on(state));
-    printf("current_line=%d program_steps=%d\n", vger_get_current_line(state), vger_get_program_step_count(state));
+    printf("current_line=%d program_steps=%d call_stack_depth=%d\n", vger_get_current_line(state),
+           vger_get_program_step_count(state), vger_get_call_stack_depth(state));
 
     printf("flags set:");
     bool any_flag = false;

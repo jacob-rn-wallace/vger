@@ -1,0 +1,9 @@
+LBL 01
+5
+XEQ 02
+STO 00
+END
+LBL 02
+3
++
+RTN

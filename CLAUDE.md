@@ -308,10 +308,10 @@ tagged by `vger_step_kind_t`:
 |---|---|---|
 | `VGER_STEP_NUMBER_LITERAL` | A bare number | `number_value` |
 | `VGER_STEP_ALPHA_LITERAL` | A quoted alpha string | `alpha_value` |
-| `VGER_STEP_OPCODE_ONLY` | ENTER^, `+ - * /`, CHS, X<>Y, CLX, LASTX, END, R/S | `opcode` |
+| `VGER_STEP_OPCODE_ONLY` | ENTER^, `+ - * /`, CHS, X<>Y, CLX, LASTX, END, R/S, RTN | `opcode` |
 | `VGER_STEP_OPCODE_REG_ARG` | STO/RCL/ASTO/ARCL | `opcode`, `int_arg` = register 00-99 |
 | `VGER_STEP_OPCODE_FLAG_ARG` | SF/CF/FS?C | `opcode`, `int_arg` = flag 00-29 |
-| `VGER_STEP_OPCODE_LABEL_ARG` | LBL/GTO | `opcode`, `int_arg` = label 00-99 |
+| `VGER_STEP_OPCODE_LABEL_ARG` | LBL/GTO/XEQ | `opcode`, `int_arg` = label 00-99 |
 | `VGER_STEP_OPCODE_DIGITS_ARG` | FIX/SCI/ENG | `opcode`, `int_arg` = digit count 0-9 |
 
 This is **not** the real HP-41's packed byte-code, and there is no
@@ -328,7 +328,7 @@ Two independent ways to get a program into a `vger_state_t`:
 2. **Text format**, via `vger_program_parse_text()` (in `vger_program.c`)
    + `vger_state_load_program()` (in `vger_state.c`). One instruction per
    line, blank lines ignored. Mnemonics: `ENTER + - * / CHS X<>Y CLX
-   LASTX END R/S STO RCL ASTO ARCL SF CF FS?C LBL GTO FIX SCI ENG`,
+   LASTX END R/S RTN STO RCL ASTO ARCL SF CF FS?C LBL GTO XEQ FIX SCI ENG`,
    each opcode-with-argument mnemonic followed by a space and an integer
    (e.g. `STO 00`, `GTO 01`). A bare number on its own line is a number
    literal (e.g. `3.5`). A double-quoted string is an alpha literal (e.g.
@@ -395,14 +395,43 @@ RUN-mode keypress commits an instruction immediately, and when
 `vger_run_program()` (R/S) steps through stored program instructions. It
 returns a `vger_exec_result_t { jumped, skip_next, halt }`:
 
-- `jumped` — GTO found its label and repositioned `current_line` directly;
-  the caller must not also auto-increment the line.
+- `jumped` — GTO, XEQ, or RTN repositioned `current_line` directly; the
+  caller must not also auto-increment the line.
 - `skip_next` — FS?C tested a *clear* flag (so it did nothing but signal
   "skip"); the run loop skips the following step. (If the flag was *set*,
   FS?C clears it and does **not** skip — matches real HP-41 FS?C
   semantics: "if set, clear it and continue; if clear, skip the next
   line.")
-- `halt` — an END or R/S step was reached; the run loop stops.
+- `halt` — an END or R/S step was reached, RTN was reached with an empty
+  call stack (treated the same as END), or XEQ overflowed the call stack
+  (see "Subroutines" below) — the run loop stops.
+
+### Subroutines (XEQ/RTN)
+
+XEQ and RTN share `state->call_stack`, a fixed `VGER_CALL_STACK_MAX_DEPTH`
+(8) array of return-line indices, manipulated only through
+`vger_call_stack_push()`/`vger_call_stack_pop()` in `vger_interp.c`:
+
+- **XEQ nn** looks up `LBL nn` exactly like GTO, but first pushes the
+  *next* line (the one after the XEQ step) as a return address. If the
+  stack is already full, XEQ **halts** rather than push past the bound —
+  the same "refuse rather than corrupt state" posture as
+  `VGER_MAX_STEPS_PER_RUN`, and exactly what `test_xeq_call_stack_overflow_halts`
+  in `tests/test_core.c` exercises (a self-recursive `XEQ 01` with no base
+  case runs out at depth 8, not a crash or a hang).
+- **RTN** pops the most recent return address and jumps there. An RTN with
+  an empty stack (reached at the top level, not inside any XEQ) is treated
+  exactly like END — this is also what a bare RTN does if pressed as a
+  direct RUN-mode keypress outside a running program.
+- A fresh `vger_run_program()` call always starts with
+  `call_stack_depth = 0` — a previous run's unfinished subroutine context
+  (e.g. a program that hit END while still inside a called subroutine)
+  never leaks into the next R/S press.
+- `VGER_CALL_STACK_MAX_DEPTH` is a **named, deliberately chosen bound**,
+  not a claimed hardware figure — real HP-41 subroutine nesting is
+  memory-dependent, and this project doesn't model byte-exact program
+  memory (see "Program representation" above). See its doc comment in
+  `vger_config.h`.
 
 `vger_run_program()` is bounded by `VGER_MAX_STEPS_PER_RUN` (100,000) —
 documented FOCAL is Turing-complete, so no bound on "the algorithm" can be
@@ -414,14 +443,13 @@ is finite" but "we refuse to run longer than this, on purpose."
 ### Implemented instruction set (milestone 1)
 
 Digit entry (0-9, `.`), CHS, ENTER^, `+ - * /`, X<>Y, CLX, LASTX, STO/RCL
-(direct addressing only — no indirect), GTO/LBL/END, R/S, SF/CF/FS?C
+(direct addressing only — no indirect), GTO/LBL/END, XEQ/RTN (subroutine
+calls, bounded call stack — see "Subroutines" below), R/S, SF/CF/FS?C
 (flags 00-29), ALPHA mode entry/backspace, ASTO/ARCL (6-char packing),
 FIX/SCI/ENG. ON (power toggle) and USER (annunciator-only stub, no
 key-remapping behavior) round out the top-row keys.
 
-**Not implemented, deferred:** XEQ/RTN subroutine nesting (would need a
-bounded call-stack array — not recursion — and its own careful design
-pass), indirect addressing (`STO IND nn` etc.), matrix/complex data types,
+**Not implemented, deferred:** indirect addressing (`STO IND nn` etc.), matrix/complex data types,
 comparison/skip instructions besides FS?C (X=Y?, X>Y?, etc.), HP-IL/
 printing, true ENG-format 3-digit-exponent grouping (`vger_state.c`
 currently approximates ENG with plain SCI formatting — see the comment in
@@ -612,6 +640,8 @@ Printed at harness startup too (`vger_print_keymap_legend()` in
 | F5 / F6 / F7 | SF / CF / FS?C (each followed by 2 digits) |
 | F8 / F9 | ASTO / ARCL (each followed by 2 digits) |
 | F10 / `,` / `;` | FIX / SCI / ENG (each followed by 1 digit) |
+| `X` | XEQ (followed by 2 digits) |
+| `R` | RTN |
 | Space | R/S |
 | `P` | PRGM (toggle) |
 | `U` | USER (toggle; annunciator only) |
@@ -630,23 +660,24 @@ comment for the exact precedence rules.
 
 ## Milestone status
 
-**Milestone 1 (this snapshot): done.** FOCAL interpreter core with the
-full state/query API, swappable mode-boundary policy (idle-only
-implemented), out-of-band reset, bounded documented-FOCAL instruction
-subset, desktop SDL2 test harness, desktop unit test suite. All
-architecture principles proven end-to-end without any hardware
-dependency.
+**Milestone 1: done.** FOCAL interpreter core with the full state/query
+API, swappable mode-boundary policy (idle-only implemented), out-of-band
+reset, bounded documented-FOCAL instruction subset, desktop SDL2 test
+harness, desktop unit test suite. All architecture principles proven
+end-to-end without any hardware dependency.
+
+**Since milestone 1:** XEQ/RTN subroutine calls (bounded call stack, see
+"Subroutines" above), CI (GitHub Actions, Ubuntu + macOS, `.github/workflows/ci.yml`).
 
 **Deferred work, in rough likely order:**
-1. XEQ/RTN subroutines (needs a bounded call-stack design).
-2. Indirect addressing, comparison/skip instructions beyond FS?C.
-3. True ENG-format display, BCD-faithful numeric semantics if a program's
+1. Indirect addressing, comparison/skip instructions beyond FS?C.
+2. True ENG-format display, BCD-faithful numeric semantics if a program's
    correctness turns out to depend on it.
-4. The MENU/system-menu layer itself (principle 2: on top of the core).
-5. Pico 2 firmware bring-up: Sharp Memory LCD driver, 5-key matrix input,
+3. The MENU/system-menu layer itself (principle 2: on top of the core).
+4. Pico 2 firmware bring-up: Sharp Memory LCD driver, 5-key matrix input,
    physical reset switch — `firmware/` is reserved and empty for this.
 
-Do not start on 5 before the earlier items are either done or explicitly
+Do not start on 4 before the earlier items are either done or explicitly
 decided to be skipped — the whole point of milestone 1 was proving the
 core architecture before hardware bring-up begins.
 
