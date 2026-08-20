@@ -1,0 +1,10 @@
+vger
+Copyright 2026 jacob-rn-wallace
+
+Licensed under the Apache License, Version 2.0.
+
+This project's design was informed by studying Eric Smith's Nonpareil
+(GPLv2, https://github.com/brouhaha/nonpareil) as a reference for
+documented HP-41/Nut-series FOCAL behavior. No Nonpareil code is included
+in or derived into this repository; it was consulted for understanding
+only, per this project's own architecture notes (see CLAUDE.md).

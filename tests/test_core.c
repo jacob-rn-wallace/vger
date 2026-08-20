@@ -1,0 +1,256 @@
+/**
+ * @file test_core.c
+ * @brief Desktop unit tests for the vger FOCAL core, run without any
+ * display/keypad hardware. Exercises the state/query API and interpreter
+ * directly via synthetic key events, the same way the harness or a future
+ * firmware input loop would drive them.
+ *
+ * Not a framework: a small check() helper (Power-of-10 rule 5's own
+ * guidance on assert()-under-NDEBUG applies just as much to a test binary
+ * as to the core, so this uses the same always-active pattern as
+ * VGER_ASSERT rather than <assert.h>) plus a bounded list of test
+ * functions run in sequence from main().
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "vger_interp.h"
+#include "vger_mode_policy.h"
+#include "vger_program.h"
+#include "vger_state.h"
+
+static int g_failures = 0;
+
+/** @brief Report a failed expectation; does not abort so the rest of the
+ *  test suite still runs and reports everything wrong in one pass. */
+static void vger_test_fail(const char *test_name, const char *what, int line)
+{
+    (void)fprintf(stderr, "FAIL %s (test_core.c:%d): %s\n", test_name, line, what);
+    g_failures++;
+}
+
+#define CHECK(test_name, cond, what) \
+    do { \
+        if (!(cond)) { \
+            vger_test_fail((test_name), (what), __LINE__); \
+        } \
+    } while (0)
+
+#define CHECK_NEAR(test_name, actual, expected, what) \
+    do { \
+        double diff = (actual) - (expected); \
+        if (diff < 0) { \
+            diff = -diff; \
+        } \
+        if (diff > 1e-9) { \
+            (void)fprintf(stderr, "FAIL %s (test_core.c:%d): %s (got %g, want %g)\n", (test_name), __LINE__, (what), \
+                           (double)(actual), (double)(expected)); \
+            g_failures++; \
+        } \
+    } while (0)
+
+static void vger_press(vger_state_t *state, vger_key_id_t id)
+{
+    vger_key_event_t event = {id, '\0'};
+    vger_interp_handle_key(state, event);
+}
+
+static void vger_press_digit(vger_state_t *state, int digit)
+{
+    vger_press(state, (vger_key_id_t)(VGER_KEY_DIGIT_0 + digit));
+}
+
+/** @brief Press the two digits of a 00-99 argument (STO/RCL/SF/GTO/...). */
+static void vger_press_two_digit_arg(vger_state_t *state, int value)
+{
+    vger_press_digit(state, (value / 10) % 10);
+    vger_press_digit(state, value % 10);
+}
+
+static void test_arithmetic(void)
+{
+    const char *name = "test_arithmetic";
+    vger_state_t *state = vger_state_get();
+    vger_state_reset(state);
+
+    vger_press_digit(state, 3);
+    vger_press(state, VGER_KEY_ENTER);
+    vger_press_digit(state, 4);
+    vger_press(state, VGER_KEY_PLUS);
+
+    CHECK_NEAR(name, vger_get_x(state), 7.0, "3 ENTER 4 + should leave 7 in X");
+    CHECK_NEAR(name, vger_get_lastx(state), 4.0, "LASTX should hold the operand (4)");
+
+    vger_press_digit(state, 2);
+    vger_press(state, VGER_KEY_TIMES);
+    CHECK_NEAR(name, vger_get_x(state), 14.0, "7 lifted, 2, * should leave 14 in X");
+}
+
+static void test_stack_lift_and_enter(void)
+{
+    const char *name = "test_stack_lift_and_enter";
+    vger_state_t *state = vger_state_get();
+    vger_state_reset(state);
+
+    vger_press_digit(state, 5);
+    vger_press(state, VGER_KEY_ENTER);
+    vger_press_digit(state, 3);
+    vger_press(state, VGER_KEY_ENTER);
+    vger_press_digit(state, 2);
+
+    CHECK_NEAR(name, vger_get_x(state), 2.0, "X should be 2 after 5 ENTER 3 ENTER 2");
+    CHECK_NEAR(name, vger_get_y(state), 3.0, "Y should be 3 (ENTER disables lift for the next entry)");
+    CHECK_NEAR(name, vger_get_z(state), 5.0, "Z should be 5");
+}
+
+static void test_sto_rcl(void)
+{
+    const char *name = "test_sto_rcl";
+    vger_state_t *state = vger_state_get();
+    vger_state_reset(state);
+
+    vger_press_digit(state, 9);
+    vger_press(state, VGER_KEY_STO);
+    vger_press_two_digit_arg(state, 5);
+
+    vger_press(state, VGER_KEY_CLX);
+    CHECK_NEAR(name, vger_get_x(state), 0.0, "CLX should zero X");
+
+    vger_press(state, VGER_KEY_RCL);
+    vger_press_two_digit_arg(state, 5);
+    CHECK_NEAR(name, vger_get_x(state), 9.0, "RCL 05 should restore the stored 9");
+    CHECK(name, vger_get_storage_kind(state, 5) == VGER_REG_NUMERIC, "register 05 should be numeric");
+}
+
+static void test_asto_arcl(void)
+{
+    const char *name = "test_asto_arcl";
+    vger_state_t *state = vger_state_get();
+    vger_state_reset(state);
+
+    vger_press(state, VGER_KEY_ALPHA);
+    vger_interp_handle_key(state, (vger_key_event_t){VGER_KEY_ALPHA_CHAR, 'H'});
+    vger_interp_handle_key(state, (vger_key_event_t){VGER_KEY_ALPHA_CHAR, 'I'});
+    vger_press(state, VGER_KEY_ASTO);
+    vger_press_two_digit_arg(state, 10);
+    vger_press(state, VGER_KEY_ALPHA); /* exit alpha; ASTO already ran, so this just toggles the mode */
+
+    CHECK(name, vger_get_storage_kind(state, 10) == VGER_REG_ALPHA_PACKED, "register 10 should hold packed alpha");
+
+    char packed[VGER_ALPHA_PACK_LEN];
+    vger_get_storage_alpha(state, 10, packed);
+    CHECK(name, packed[0] == 'H' && packed[1] == 'I', "packed alpha should start with HI");
+}
+
+static void test_program_run_via_text_load(void)
+{
+    const char *name = "test_program_run_via_text_load";
+    vger_state_t *state = vger_state_get();
+    vger_state_reset(state);
+
+    const char *source = "LBL 01\n"
+                          "3\n"
+                          "STO 00\n"
+                          "4\n"
+                          "STO 01\n"
+                          "RCL 00\n"
+                          "RCL 01\n"
+                          "+\n"
+                          "STO 02\n"
+                          "SF 05\n"
+                          "FS?C 05\n"
+                          "GTO 02\n"
+                          "STO 03\n"
+                          "LBL 02\n"
+                          "END\n";
+
+    vger_program_t program;
+    char err[128];
+    bool parsed = vger_program_parse_text(source, &program, err, sizeof(err));
+    CHECK(name, parsed, err);
+    if (!parsed) {
+        return;
+    }
+    CHECK(name, program.step_count == 15, "expected 15 parsed steps");
+
+    vger_state_load_program(state, &program);
+    vger_press(state, VGER_KEY_RUN_STOP);
+
+    CHECK_NEAR(name, vger_get_storage_numeric(state, 2), 7.0, "register 02 should hold 3+4=7");
+    CHECK(name, vger_get_flag(state, 5) == false, "flag 05 should have been cleared by FS?C");
+    CHECK(name, vger_get_storage_kind(state, 3) == VGER_REG_NUMERIC && vger_get_storage_numeric(state, 3) == 0.0,
+          "register 03 should be untouched (0): GTO 02 jumped over the STO 03 step");
+}
+
+static void test_prgm_mode_keystroke_recording(void)
+{
+    const char *name = "test_prgm_mode_keystroke_recording";
+    vger_state_t *state = vger_state_get();
+    vger_state_reset(state);
+
+    vger_press(state, VGER_KEY_PRGM);
+    vger_press(state, VGER_KEY_LBL);
+    vger_press_two_digit_arg(state, 1);
+    vger_press_digit(state, 6);
+    vger_press_digit(state, 6);
+    vger_press(state, VGER_KEY_STO);
+    vger_press_two_digit_arg(state, 20);
+    vger_press(state, VGER_KEY_END);
+    vger_press(state, VGER_KEY_PRGM); /* back to RUN */
+
+    CHECK(name, vger_get_program_step_count(state) == 4, "expected 4 recorded steps (LBL, number, STO, END)");
+    CHECK(name, vger_get_calc_mode(state) == VGER_CALC_MODE_RUN, "should be back in RUN mode");
+
+    vger_press(state, VGER_KEY_RUN_STOP);
+    CHECK_NEAR(name, vger_get_storage_numeric(state, 20), 66.0, "recorded program should store 66 into register 20");
+}
+
+static void test_mode_policy_idle_only(void)
+{
+    const char *name = "test_mode_policy_idle_only";
+    vger_state_t *state = vger_state_get();
+    vger_state_reset(state);
+
+    CHECK(name, vger_mode_policy_may_enter_menu(VGER_MODE_POLICY_IDLE_ONLY, state), "idle calculator should allow MENU");
+
+    vger_press_digit(state, 1); /* mid-digit-entry now */
+    CHECK(name, !vger_mode_policy_may_enter_menu(VGER_MODE_POLICY_IDLE_ONLY, state),
+          "mid-digit-entry should refuse MENU");
+}
+
+static void test_out_of_band_reset(void)
+{
+    const char *name = "test_out_of_band_reset";
+    vger_state_t *state = vger_state_get();
+    vger_state_reset(state);
+
+    vger_press_digit(state, 9);
+    vger_press(state, VGER_KEY_STO);
+    vger_press_two_digit_arg(state, 0);
+
+    vger_state_reset(state); /* the out-of-band path: never goes through vger_interp_handle_key() */
+
+    CHECK_NEAR(name, vger_get_x(state), 0.0, "reset should zero X");
+    CHECK_NEAR(name, vger_get_storage_numeric(state, 0), 0.0, "reset should clear storage registers too");
+}
+
+int main(void)
+{
+    test_arithmetic();
+    test_stack_lift_and_enter();
+    test_sto_rcl();
+    test_asto_arcl();
+    test_program_run_via_text_load();
+    test_prgm_mode_keystroke_recording();
+    test_mode_policy_idle_only();
+    test_out_of_band_reset();
+
+    if (g_failures == 0) {
+        printf("All tests passed.\n");
+        return 0;
+    }
+    (void)fprintf(stderr, "%d check(s) failed.\n", g_failures);
+    return 1;
+}
