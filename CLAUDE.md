@@ -60,6 +60,24 @@ whatever component copies from it, and that decision (and its scope) must
 be recorded in DEVIATIONS.md-style detail before it happens, not
 discovered after the fact.
 
+Two other projects sit in the same reference-only category, relevant to
+the eventual Pico 2/Sharp-LCD firmware milestone rather than to `core/`:
+**DB48X** (LGPL-3.0, <https://github.com/c3d/db48x>), a from-scratch RPL
+runtime in the spirit of HP48/49/50, and **C47** (GPL-3.0,
+<https://gitlab.com/rpncalculators/c43>), an HP-42S-lineage RPN
+calculator. Both run on SwissMicros DM42/DM32 hardware via SwissMicros'
+DMCP platform SDK, and both render onto the same physical display part
+this project targets — the Sharp LS027B7DH01, 400×240 Memory LCD — so
+their approach to that hardware (partial refresh, alphanumeric/annunciator
+layout, soft-key row rendering on a 1-bit memory LCD) is legitimate study
+material once `firmware/` work starts. Neither is a source of code to
+vendor or adapt: both are copyleft (LGPL-3.0 and GPL-3.0 respectively),
+their UI code is coupled to DMCP (which doesn't exist for the Pico 2), and
+DB48X's RPL object-runtime is conceptually closer to `Cassini` (HP48/49/50
+Saturn-family) than to this project's FOCAL model in any case. Same rule
+as Nonpareil: read for ideas, never copy, and any deliberate exception
+gets a DEVIATIONS.md-style writeup before it happens.
+
 ## Architecture principles (non-negotiable)
 
 These came from hard lessons on `soynut` (a related project on the same
