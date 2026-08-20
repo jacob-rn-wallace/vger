@@ -134,6 +134,34 @@ deliberate, discussed decision:
 None of this hardware bring-up exists yet. `firmware/` is an empty
 directory reserved for it. Milestone 1 (this snapshot) is desktop-only.
 
+### Candidate Sharp LCD driver libraries (evaluate when firmware starts)
+
+Two existing Pico-SDK libraries already solve the fiddly part of driving
+this exact display part (LS027B7DH01) — the row-addressed partial-refresh
+SPI protocol and VCOM polarity-inversion timing (the display degrades if
+VCOM isn't toggled periodically) — and are worth a real look before
+writing that driver from scratch:
+
+- [mattwach/pico_sharpmem_display](https://github.com/mattwach/pico_sharpmem_display)
+  (LGPL-2.1, plain C): the closer design fit — explicitly no `malloc()`
+  ("use of dynamic memory allocation is debatable on a resource-limited
+  microcontroller," caller supplies the buffer), layered low/mid/high API,
+  proportional fonts via RLE compression with Python tooling to generate
+  more. Copyleft, so using it (verbatim or as a vendored-by-copy component)
+  is a deliberate call, not a default — same category of decision as the
+  Nonpareil/DB48X/C47 entries above, needing its own DEVIATIONS.md-style
+  writeup if it happens.
+- [Piorkos/sharp-memory-display-driver](https://github.com/Piorkos/sharp-memory-display-driver)
+  (MIT, C++): license-clean, but uses C++ classes and `new` (dynamic
+  allocation) — would need real rework to fit rule 3 (no allocation) and
+  this project's plain-C toolchain before it's usable as anything more
+  than a reference for the SPI/VCOM sequencing.
+
+Neither is a drop-in "UI" — both are the SPI/framebuffer layer underneath
+one, which this project's own display/annunciator rendering (principle 1:
+driven entirely through `vger_state.h`'s query API) would still sit on
+top of either way.
+
 ## Repository layout
 
 ```
