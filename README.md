@@ -12,8 +12,11 @@ Named for V'Ger, from *Star Trek: The Motion Picture* — a simple probe
 transformed into something far beyond its original design, which is the
 spirit of taking the HP-41's simple interface further than the original
 hardware ever could. Continues HP's own space-probe calculator naming
-(Voyager, Pioneer, Saturn) and this author's related project, `soynut`
-(Cassini).
+(Voyager, Pioneer, Saturn) and this author's own convention of naming
+calculator projects after space probes — `Cassini` (a separate project, an
+HP Saturn-CPU-family replica) being the other one so far. `soynut` (an
+HP-41CV replica, unrelated name) is a different related project this
+one's architecture conventions are informed by.
 
 ## Layout
 

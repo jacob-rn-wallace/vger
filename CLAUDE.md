@@ -25,8 +25,14 @@ elegant interaction model and push it further than the original hardware
 ever could, without losing what made it simple and elegant in the first
 place. It also continues HP's own tradition of space-probe calculator
 names (the Voyager series — HP-11C/12C/15C/16C — the Pioneer series, the
-Saturn CPU architecture) and this author's related project, `soynut`,
-named after Cassini.
+Saturn CPU architecture) and this author's own convention of naming
+calculator projects after space probes — `Cassini` (a separate project: a
+ground-up HP Saturn-CPU-family replica, i.e. HP48/49/50-series, named for
+the probe that orbited Saturn) being the other one so far. `soynut` (an
+HP-41CV replica — its name is unrelated to the space-probe convention) is
+a different related project, on the same Pico 2 + Sharp Memory LCD
+hardware target, whose *architecture conventions* (not name) this project
+draws on — see "Architecture principles" and "Coding conventions" below.
 
 ### Compatibility target — what's in scope and what isn't
 
