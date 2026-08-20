@@ -81,7 +81,8 @@ the build automatically.
 Implements a bounded, documented-FOCAL subset: digit entry, ENTER^/CLX/
 X<>Y/LASTX, `+ - * /`/CHS, STO/RCL, GTO/LBL/END, XEQ/RTN subroutine calls
 (bounded call stack), indirect addressing (IND — every argument-taking
-instruction except LBL), R/S execution, SF/CF/FS?C on flags 00-29, ALPHA
+instruction except LBL), R/S execution, SF/CF/FS?C on flags 00-29, the 8
+conditional-skip tests (X=0?/X#0?/X>0?/X<0?, X=Y?/X#Y?/X>Y?/X<Y?), ALPHA
 entry with ASTO/ARCL packing, and FIX/SCI/ENG. See `core/vger_interp.c`'s
 file comment for the specific simplifications this implies (append-only
 PRGM recording, synchronous R/S, non-digit-key-cancels-pending-argument).

@@ -108,6 +108,16 @@ typedef enum {
     VGER_KEY_SF,
     VGER_KEY_CF,
     VGER_KEY_FS_QUESTION_C,
+    /* Conditional-skip test instructions: non-destructive, skip the next
+     * program step iff the named condition is false (FS?C's polarity). */
+    VGER_KEY_X_EQ_0,
+    VGER_KEY_X_NE_0,
+    VGER_KEY_X_GT_0,
+    VGER_KEY_X_LT_0,
+    VGER_KEY_X_EQ_Y,
+    VGER_KEY_X_NE_Y,
+    VGER_KEY_X_GT_Y,
+    VGER_KEY_X_LT_Y,
     VGER_KEY_ALPHA,
     VGER_KEY_ASTO,
     VGER_KEY_ARCL,

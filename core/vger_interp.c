@@ -382,11 +382,86 @@ static void vger_handle_argument_digit_or_abort(vger_state_t *state, vger_key_ev
 /* Execution: shared by immediate keypress commit and the R/S run loop    */
 /* ---------------------------------------------------------------------- */
 
+/** @brief True for the 8 conditional-skip test instructions (X=0?, X>Y?,
+ *  etc.), which vger_exec_opcode_only() delegates to
+ *  vger_exec_comparison() rather than handling inline (rule 4: split by
+ *  category rather than growing one switch past ~60 lines). */
+static bool vger_is_comparison_opcode(vger_key_id_t opcode)
+{
+    switch (opcode) {
+        case VGER_KEY_X_EQ_0:
+        case VGER_KEY_X_NE_0:
+        case VGER_KEY_X_GT_0:
+        case VGER_KEY_X_LT_0:
+        case VGER_KEY_X_EQ_Y:
+        case VGER_KEY_X_NE_Y:
+        case VGER_KEY_X_GT_Y:
+        case VGER_KEY_X_LT_Y:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/** @brief Execute one of the 8 conditional-skip test instructions: skip
+ *  the next program step iff the named condition is false - the same
+ *  "true -> continue, false -> skip" polarity as FS?C. Non-destructive:
+ *  X, Y, Z, T, and LASTX are all left untouched. Equality is tested
+ *  exactly (==), matching documented HP-41 behavior; this project's IEEE754
+ *  double numeric model (see CLAUDE.md's "Registers and stack") already
+ *  carries the same exact-decimal-fidelity caveat everywhere else. */
+static void vger_exec_comparison(vger_state_t *state, vger_key_id_t opcode, vger_exec_result_t *out)
+{
+    VGER_ASSERT(state != NULL);
+    VGER_ASSERT(out != NULL);
+
+    bool condition_true;
+    switch (opcode) {
+        case VGER_KEY_X_EQ_0:
+            condition_true = (state->reg_x == 0.0);
+            break;
+        case VGER_KEY_X_NE_0:
+            condition_true = (state->reg_x != 0.0);
+            break;
+        case VGER_KEY_X_GT_0:
+            condition_true = (state->reg_x > 0.0);
+            break;
+        case VGER_KEY_X_LT_0:
+            condition_true = (state->reg_x < 0.0);
+            break;
+        case VGER_KEY_X_EQ_Y:
+            condition_true = (state->reg_x == state->reg_y);
+            break;
+        case VGER_KEY_X_NE_Y:
+            condition_true = (state->reg_x != state->reg_y);
+            break;
+        case VGER_KEY_X_GT_Y:
+            condition_true = (state->reg_x > state->reg_y);
+            break;
+        case VGER_KEY_X_LT_Y:
+            condition_true = (state->reg_x < state->reg_y);
+            break;
+        default:
+            VGER_ASSERT(false);
+            condition_true = false;
+            break;
+    }
+
+    if (!condition_true) {
+        out->skip_next = true;
+    }
+}
+
 static void vger_exec_opcode_only(vger_state_t *state, vger_key_id_t opcode, int *io_current_line, vger_exec_result_t *out)
 {
     VGER_ASSERT(state != NULL);
     VGER_ASSERT(io_current_line != NULL);
     VGER_ASSERT(out != NULL);
+
+    if (vger_is_comparison_opcode(opcode)) {
+        vger_exec_comparison(state, opcode, out);
+        return;
+    }
 
     switch (opcode) {
         case VGER_KEY_ENTER:

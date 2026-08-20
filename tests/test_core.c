@@ -184,6 +184,113 @@ static void test_indirect_gto(void)
           "register 99 should be untouched: GTO IND jumped over the STO 99 step");
 }
 
+static void test_comparison_skip_vs_y(void)
+{
+    const char *name = "test_comparison_skip_vs_y";
+    vger_state_t *state = vger_state_get();
+    char err[128];
+
+    /* X(3) > Y(5) is false: X>Y? should skip the following GTO 02, so
+     * STO 03 runs and register 03 ends up holding X (3). */
+    const char *source_false = "LBL 01\n"
+                                "5\n"
+                                "STO 00\n"
+                                "3\n"
+                                "STO 01\n"
+                                "RCL 00\n"
+                                "RCL 01\n"
+                                "X>Y?\n"
+                                "GTO 02\n"
+                                "STO 03\n"
+                                "LBL 02\n"
+                                "END\n";
+    vger_program_t program_false;
+    bool parsed_false = vger_program_parse_text(source_false, &program_false, err, sizeof(err));
+    CHECK(name, parsed_false, err);
+    if (parsed_false) {
+        vger_state_reset(state);
+        vger_state_load_program(state, &program_false);
+        vger_press(state, VGER_KEY_RUN_STOP);
+        CHECK_NEAR(name, vger_get_storage_numeric(state, 3), 3.0, "X>Y? false should skip GTO 02, letting STO 03 run");
+    }
+
+    /* X(5) > Y(3) is true: X>Y? should NOT skip, so GTO 02 jumps clean
+     * over STO 03 and register 03 stays untouched (0). */
+    const char *source_true = "LBL 01\n"
+                               "3\n"
+                               "STO 00\n"
+                               "5\n"
+                               "STO 01\n"
+                               "RCL 00\n"
+                               "RCL 01\n"
+                               "X>Y?\n"
+                               "GTO 02\n"
+                               "STO 03\n"
+                               "LBL 02\n"
+                               "END\n";
+    vger_program_t program_true;
+    bool parsed_true = vger_program_parse_text(source_true, &program_true, err, sizeof(err));
+    CHECK(name, parsed_true, err);
+    if (parsed_true) {
+        vger_state_reset(state);
+        vger_state_load_program(state, &program_true);
+        vger_press(state, VGER_KEY_RUN_STOP);
+        CHECK(name, vger_get_storage_kind(state, 3) == VGER_REG_NUMERIC && vger_get_storage_numeric(state, 3) == 0.0,
+              "X>Y? true should not skip GTO 02, jumping clean over STO 03");
+    }
+}
+
+static void test_comparison_skip_vs_zero(void)
+{
+    const char *name = "test_comparison_skip_vs_zero";
+    vger_state_t *state = vger_state_get();
+    char err[128];
+
+    /* X=0? true (X really is 0): should not skip, so GTO 02 jumps clean
+     * over "99 STO 05" and register 05 keeps its sentinel value (7). */
+    const char *source_true = "LBL 01\n"
+                               "7\n"
+                               "STO 05\n"
+                               "0\n"
+                               "X=0?\n"
+                               "GTO 02\n"
+                               "99\n"
+                               "STO 05\n"
+                               "LBL 02\n"
+                               "END\n";
+    vger_program_t program_true;
+    bool parsed_true = vger_program_parse_text(source_true, &program_true, err, sizeof(err));
+    CHECK(name, parsed_true, err);
+    if (parsed_true) {
+        vger_state_reset(state);
+        vger_state_load_program(state, &program_true);
+        vger_press(state, VGER_KEY_RUN_STOP);
+        CHECK_NEAR(name, vger_get_storage_numeric(state, 5), 7.0, "X=0? true should not skip, jumping clean over STO 05");
+    }
+
+    /* X=0? false (X is 3): should skip the GTO 02, letting "99 STO 05"
+     * run, so register 05 ends up holding 99. */
+    const char *source_false = "LBL 01\n"
+                                "7\n"
+                                "STO 05\n"
+                                "3\n"
+                                "X=0?\n"
+                                "GTO 02\n"
+                                "99\n"
+                                "STO 05\n"
+                                "LBL 02\n"
+                                "END\n";
+    vger_program_t program_false;
+    bool parsed_false = vger_program_parse_text(source_false, &program_false, err, sizeof(err));
+    CHECK(name, parsed_false, err);
+    if (parsed_false) {
+        vger_state_reset(state);
+        vger_state_load_program(state, &program_false);
+        vger_press(state, VGER_KEY_RUN_STOP);
+        CHECK_NEAR(name, vger_get_storage_numeric(state, 5), 99.0, "X=0? false should skip GTO 02, letting STO 05 run");
+    }
+}
+
 static void test_asto_arcl(void)
 {
     const char *name = "test_asto_arcl";
@@ -368,6 +475,8 @@ int main(void)
     test_xeq_call_stack_overflow_halts();
     test_indirect_sto_rcl();
     test_indirect_gto();
+    test_comparison_skip_vs_y();
+    test_comparison_skip_vs_zero();
     test_prgm_mode_keystroke_recording();
     test_mode_policy_idle_only();
     test_out_of_band_reset();

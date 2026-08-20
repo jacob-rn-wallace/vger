@@ -308,7 +308,7 @@ tagged by `vger_step_kind_t`:
 |---|---|---|
 | `VGER_STEP_NUMBER_LITERAL` | A bare number | `number_value` |
 | `VGER_STEP_ALPHA_LITERAL` | A quoted alpha string | `alpha_value` |
-| `VGER_STEP_OPCODE_ONLY` | ENTER^, `+ - * /`, CHS, X<>Y, CLX, LASTX, END, R/S, RTN | `opcode` |
+| `VGER_STEP_OPCODE_ONLY` | ENTER^, `+ - * /`, CHS, X<>Y, CLX, LASTX, END, R/S, RTN, the 8 X=0?/X=Y?-family tests | `opcode` |
 | `VGER_STEP_OPCODE_REG_ARG` | STO/RCL/ASTO/ARCL | `opcode`, `int_arg` = register 00-99 |
 | `VGER_STEP_OPCODE_FLAG_ARG` | SF/CF/FS?C | `opcode`, `int_arg` = flag 00-29 |
 | `VGER_STEP_OPCODE_LABEL_ARG` | LBL/GTO/XEQ | `opcode`, `int_arg` = label 00-99 |
@@ -328,7 +328,8 @@ Two independent ways to get a program into a `vger_state_t`:
 2. **Text format**, via `vger_program_parse_text()` (in `vger_program.c`)
    + `vger_state_load_program()` (in `vger_state.c`). One instruction per
    line, blank lines ignored. Mnemonics: `ENTER + - * / CHS X<>Y CLX
-   LASTX END R/S RTN STO RCL ASTO ARCL SF CF FS?C LBL GTO XEQ FIX SCI ENG`,
+   LASTX END R/S RTN STO RCL ASTO ARCL SF CF FS?C LBL GTO XEQ FIX SCI ENG
+   X=0? X#0? X>0? X<0? X=Y? X#Y? X>Y? X<Y?`,
    each opcode-with-argument mnemonic followed by a space and an integer
    (e.g. `STO 00`, `GTO 01`), or by `IND` and an integer for the indirect
    form (e.g. `STO IND 05`; see "Indirect addressing" below — every
@@ -473,19 +474,36 @@ mechanism across STO/RCL/ASTO/ARCL (register-indirect), SF/CF/FS?C
   execution time.
 - **Text format:** `MNEMONIC IND nn`, e.g. `STO IND 05`, `GTO IND 07`.
 
+### Conditional-skip tests
+
+`X=0? X#0? X>0? X<0?` and `X=Y? X#Y? X>Y? X<Y?` are the 8 documented
+comparison instructions, non-destructive (X, Y, Z, T, LASTX all untouched)
+and `VGER_STEP_OPCODE_ONLY` — no argument, so they need none of the
+argument-collection machinery. FS?C's polarity carries over exactly: true
+→ continue, false → `skip_next` (the run loop skips the following step).
+
+`vger_exec_opcode_only()` delegates to `vger_exec_comparison()` for these
+8 (checked via `vger_is_comparison_opcode()`) rather than growing its own
+switch past ~60 lines (rule 4) — the same "split by category into a
+sibling static helper" pattern as `vger_exec_reg_arg`/`_flag_arg`/
+`_label_arg`/`_digits_arg`. Equality is tested exactly (`==`), matching
+documented HP-41 behavior; this is the same exact-decimal-fidelity caveat
+already noted for the IEEE754 `double` numeric model throughout (see
+"Registers and stack" above), not a new one.
+
 ### Implemented instruction set (milestone 1)
 
 Digit entry (0-9, `.`), CHS, ENTER^, `+ - * /`, X<>Y, CLX, LASTX, STO/RCL
 (direct and indirect — see "Indirect addressing" below), GTO/LBL/END,
 XEQ/RTN (subroutine calls, bounded call stack — see "Subroutines" below),
-R/S, SF/CF/FS?C (flags 00-29), ALPHA mode entry/backspace, ASTO/ARCL
-(6-char packing), FIX/SCI/ENG. Every argument-taking instruction except
-LBL supports the indirect (IND) form. ON (power toggle) and USER
-(annunciator-only stub, no key-remapping behavior) round out the top-row
-keys.
+R/S, SF/CF/FS?C (flags 00-29), the 8 conditional-skip test instructions
+(X=0?/X#0?/X>0?/X<0?, X=Y?/X#Y?/X>Y?/X<Y? — see "Conditional-skip tests"
+below), ALPHA mode entry/backspace, ASTO/ARCL (6-char packing), FIX/SCI/
+ENG. Every argument-taking instruction except LBL supports the indirect
+(IND) form. ON (power toggle) and USER (annunciator-only stub, no
+key-remapping behavior) round out the top-row keys.
 
-**Not implemented, deferred:** matrix/complex data types,
-comparison/skip instructions besides FS?C (X=Y?, X>Y?, etc.), HP-IL/
+**Not implemented, deferred:** matrix/complex data types, HP-IL/
 printing, true ENG-format 3-digit-exponent grouping (`vger_state.c`
 currently approximates ENG with plain SCI formatting — see the comment in
 `vger_format_numeric_display()`), byte-exact program-memory accounting,
@@ -674,6 +692,8 @@ Printed at harness startup too (`vger_print_keymap_legend()` in
 | `I` | IND (indirect prefix; press right after an opcode key, before its digits — no effect after LBL) |
 | F1 / F2 / F3 / F4 | STO / RCL / GTO / LBL (each followed by 2 digits) |
 | F5 / F6 / F7 | SF / CF / FS?C (each followed by 2 digits) |
+| `Q` `W` `E` `T` | X=0? / X#0? / X>0? / X<0? |
+| `A` `S` `D` `F` | X=Y? / X#Y? / X>Y? / X<Y? |
 | F8 / F9 | ASTO / ARCL (each followed by 2 digits) |
 | F10 / `,` / `;` | FIX / SCI / ENG (each followed by 1 digit) |
 | `X` | XEQ (followed by 2 digits) |
@@ -705,17 +725,17 @@ end-to-end without any hardware dependency.
 **Since milestone 1:** XEQ/RTN subroutine calls (bounded call stack, see
 "Subroutines" above), CI (GitHub Actions, Ubuntu + macOS,
 `.github/workflows/ci.yml`), indirect addressing (IND, see "Indirect
-addressing" above).
+addressing" above), the 8 conditional-skip test instructions (see
+"Conditional-skip tests" above).
 
 **Deferred work, in rough likely order:**
-1. Comparison/skip instructions beyond FS?C (X=Y?, X>Y?, etc.).
-2. True ENG-format display, BCD-faithful numeric semantics if a program's
+1. True ENG-format display, BCD-faithful numeric semantics if a program's
    correctness turns out to depend on it.
-3. The MENU/system-menu layer itself (principle 2: on top of the core).
-4. Pico 2 firmware bring-up: Sharp Memory LCD driver, 5-key matrix input,
+2. The MENU/system-menu layer itself (principle 2: on top of the core).
+3. Pico 2 firmware bring-up: Sharp Memory LCD driver, 5-key matrix input,
    physical reset switch — `firmware/` is reserved and empty for this.
 
-Do not start on 4 before the earlier items are either done or explicitly
+Do not start on 3 before the earlier items are either done or explicitly
 decided to be skipped — the whole point of milestone 1 was proving the
 core architecture before hardware bring-up begins.
 

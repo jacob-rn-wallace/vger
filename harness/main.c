@@ -78,6 +78,8 @@ static void vger_print_keymap_legend(void)
     printf("                    before its digits, except LBL which has no indirect form)\n");
     printf("  F1 F2 F3 F4       STO  RCL  GTO  LBL   (each followed by 2 digits)\n");
     printf("  F5 F6 F7          SF   CF   FS?C       (each followed by 2 digits)\n");
+    printf("  Q W E T           X=0? X#0? X>0? X<0?  (conditional skip vs. zero)\n");
+    printf("  A S D F           X=Y? X#Y? X>Y? X<Y?  (conditional skip vs. Y)\n");
     printf("  F8 F9             ASTO ARCL             (each followed by 2 digits)\n");
     printf("  F10 , ;           FIX  SCI  ENG        (each followed by 1 digit)\n");
     printf("  X                 XEQ (followed by 2 digits; calls a subroutine)\n");
