@@ -1,0 +1,15 @@
+# Explicit check list, not relying on clang-tidy's built-in default: some
+# clang-tidy builds (e.g. Homebrew's llvm package) enable zero checks with
+# no .clang-tidy file present and no -checks= argument, which hard-fails
+# the build ("Error: no checks enabled") rather than just finding nothing.
+#
+# clang-analyzer-security.insecureAPI.* is excluded: it recommends C11
+# Annex K "_s" functions (fprintf_s, memset_s, ...), which are optional and
+# not implemented by glibc, macOS's libc, or Pico newlib - not real advice
+# for this project's actual portability targets.
+Checks: >
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  -clang-analyzer-security.insecureAPI.*,
+  bugprone-*
+WarningsAsErrors: ''

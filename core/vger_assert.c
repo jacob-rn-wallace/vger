@@ -14,7 +14,7 @@
  * @param file Source file the assertion fired in.
  * @param line Source line the assertion fired on.
  */
-void vger_assert_fail(const char *condition_text, const char *file, int line)
+_Noreturn void vger_assert_fail(const char *condition_text, const char *file, int line)
 {
     if (condition_text == NULL) {
         condition_text = "<null condition text>";
