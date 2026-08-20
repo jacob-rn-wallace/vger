@@ -537,6 +537,43 @@ of `vger_key_id_t`. The harness's `vger_keymap_classify()` returns
 result; there is no actual menu system to enter yet (that's future work,
 built on top of the core per principle 2, not inside it).
 
+### MENU UI design constraints (informed by hands-on DB48X/C47 review)
+
+Before the MENU/system-menu layer itself gets built (still future work —
+see "Deferred work" below), two concrete constraints came out of using
+DB48X (HP48/49/50 RPL) and C47 (HP-42S-lineage) firsthand, specifically to
+see what to avoid:
+
+1. **Entry point must stay dedicated and unshifted.** Both DB48X and C47
+   bury menu/system access behind a shift-modified secondary or tertiary
+   key function — in C47's case, literally described in its own docs as
+   "the infamous cycling shift," a workaround for the DM42 having only one
+   physical shift key. vger already avoids this *by construction*:
+   principle 2's dedicated 5th key (replacing the old overlay-latch
+   position) is a first-class entry point at the same level as ON/USER/
+   PRGM/ALPHA, never a shifted function. This constraint is already
+   satisfied by the existing hardware design — nothing to change, just
+   don't compromise it later (e.g. by collapsing MENU onto a shift-layer
+   of an existing key to save a physical key during firmware bring-up).
+2. **Every menu transition needs visible feedback — not implemented yet.**
+   Both reference systems flash instantly from one menu screen to the
+   next on selection, with no acknowledgment of what was just pressed and
+   no persistent sense of where you are in the menu tree relative to
+   where you were. Concretely, whatever renders the eventual menu layer
+   needs:
+   - **Selection feedback** — the pressed softkey should visibly
+     acknowledge the press (e.g. briefly highlight/invert its label)
+     before anything transitions, so cause and effect are connected.
+   - **Positional feedback** — some persistent indication of depth/path
+     in the menu tree (a breadcrumb, a path label, consistent per-depth
+     framing) rather than each screen reading as an unrelated flash-cut.
+   This isn't just a taste preference: vger's target display (Sharp
+   Memory LCD) is happiest with partial refresh over full-panel redraws
+   (see "Candidate Sharp LCD driver libraries" above), so an abrupt
+   full-screen flash-to-next-menu is also the more expensive/visible
+   thing to do on the actual hardware, not only the worse UX. A
+   deliberate, visible transition is motivated on both fronts.
+
 ## Coding conventions
 
 Applies to this project's own original code (everything in `core/`,
@@ -731,7 +768,9 @@ addressing" above), the 8 conditional-skip test instructions (see
 **Deferred work, in rough likely order:**
 1. True ENG-format display, BCD-faithful numeric semantics if a program's
    correctness turns out to depend on it.
-2. The MENU/system-menu layer itself (principle 2: on top of the core).
+2. The MENU/system-menu layer itself (principle 2: on top of the core;
+   see "MENU UI design constraints" above for two concrete requirements
+   to design against before/while building it).
 3. Pico 2 firmware bring-up: Sharp Memory LCD driver, 5-key matrix input,
    physical reset switch — `firmware/` is reserved and empty for this.
 
