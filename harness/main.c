@@ -74,6 +74,8 @@ static void vger_print_keymap_legend(void)
     printf("  Tab               X<>Y\n");
     printf("  Delete            CLX\n");
     printf("  L                 LASTX\n");
+    printf("  I                 IND (indirect prefix; press right after STO/RCL/GTO/etc.,\n");
+    printf("                    before its digits, except LBL which has no indirect form)\n");
     printf("  F1 F2 F3 F4       STO  RCL  GTO  LBL   (each followed by 2 digits)\n");
     printf("  F5 F6 F7          SF   CF   FS?C       (each followed by 2 digits)\n");
     printf("  F8 F9             ASTO ARCL             (each followed by 2 digits)\n");

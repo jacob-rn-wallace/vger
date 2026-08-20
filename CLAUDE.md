@@ -330,11 +330,13 @@ Two independent ways to get a program into a `vger_state_t`:
    line, blank lines ignored. Mnemonics: `ENTER + - * / CHS X<>Y CLX
    LASTX END R/S RTN STO RCL ASTO ARCL SF CF FS?C LBL GTO XEQ FIX SCI ENG`,
    each opcode-with-argument mnemonic followed by a space and an integer
-   (e.g. `STO 00`, `GTO 01`). A bare number on its own line is a number
-   literal (e.g. `3.5`). A double-quoted string is an alpha literal (e.g.
-   `"HELLO"`). See `examples/sum.focal` for a worked example, and
-   `harness/main.c`'s `vger_load_program_file()` for how the harness loads
-   one from `argv[1]`.
+   (e.g. `STO 00`, `GTO 01`), or by `IND` and an integer for the indirect
+   form (e.g. `STO IND 05`; see "Indirect addressing" below — every
+   argument-taking mnemonic except LBL accepts this). A bare number on its
+   own line is a number literal (e.g. `3.5`). A double-quoted string is an
+   alpha literal (e.g. `"HELLO"`). See `examples/sum.focal` and
+   `examples/subroutine.focal` for worked examples, and `harness/main.c`'s
+   `vger_load_program_file()` for how the harness loads one from `argv[1]`.
 
 Both paths converge on the same `vger_program_t`/`vger_execute_step()`
 machinery — R/S execution doesn't know or care which path built the
@@ -440,16 +442,49 @@ program becomes a detectable stop condition instead of a hang. This is the
 one loop in `core/` whose bound isn't "this can't happen because the input
 is finite" but "we refuse to run longer than this, on purpose."
 
+### Indirect addressing (IND)
+
+Every argument-taking instruction except LBL accepts an indirect form:
+`STO IND 05` stores into whichever register register 05's *numeric
+contents* name, not register 05 itself. This is a genuinely uniform
+mechanism across STO/RCL/ASTO/ARCL (register-indirect), SF/CF/FS?C
+(flag-indirect), GTO/XEQ (label-indirect), and FIX/SCI/ENG
+(digit-count-indirect) — one resolution step, not four separate ones:
+
+- `vger_program_step_t.indirect` marks a parsed/recorded step as
+  indirect; `int_arg` then holds the *pointer register* (00-99), not the
+  final argument.
+- `vger_resolve_arg()` in `vger_interp.c` is the single place this gets
+  resolved, called once per step from `vger_execute_step()` right before
+  dispatching to whichever `vger_exec_*_arg()` helper handles that step's
+  kind — those helpers are completely unaware indirect addressing exists;
+  they just receive a resolved `int`, same as always. An out-of-range or
+  non-numeric pointer register resolves to `-1`, which every helper
+  already treats as out of range (they no-op on it), so no
+  indirect-specific bounds checking exists anywhere but this one function.
+- **Keystroke entry:** press `IND` right after the opcode key, before any
+  digits — `state->awaiting_argument_indirect` then forces the following
+  digit count to 2 regardless of the opcode's normal argument shape (e.g.
+  `FIX IND 05` still needs 2 digits for register 05, even though a direct
+  `FIX 5` only needs 1). Pressing `IND` with digits already typed, without
+  a pending argument, or after LBL, is a no-op — LBL has no indirect form
+  since its label number is a static marker matched by
+  `vger_program_find_label()`'s literal scan, not something resolved at
+  execution time.
+- **Text format:** `MNEMONIC IND nn`, e.g. `STO IND 05`, `GTO IND 07`.
+
 ### Implemented instruction set (milestone 1)
 
 Digit entry (0-9, `.`), CHS, ENTER^, `+ - * /`, X<>Y, CLX, LASTX, STO/RCL
-(direct addressing only — no indirect), GTO/LBL/END, XEQ/RTN (subroutine
-calls, bounded call stack — see "Subroutines" below), R/S, SF/CF/FS?C
-(flags 00-29), ALPHA mode entry/backspace, ASTO/ARCL (6-char packing),
-FIX/SCI/ENG. ON (power toggle) and USER (annunciator-only stub, no
-key-remapping behavior) round out the top-row keys.
+(direct and indirect — see "Indirect addressing" below), GTO/LBL/END,
+XEQ/RTN (subroutine calls, bounded call stack — see "Subroutines" below),
+R/S, SF/CF/FS?C (flags 00-29), ALPHA mode entry/backspace, ASTO/ARCL
+(6-char packing), FIX/SCI/ENG. Every argument-taking instruction except
+LBL supports the indirect (IND) form. ON (power toggle) and USER
+(annunciator-only stub, no key-remapping behavior) round out the top-row
+keys.
 
-**Not implemented, deferred:** indirect addressing (`STO IND nn` etc.), matrix/complex data types,
+**Not implemented, deferred:** matrix/complex data types,
 comparison/skip instructions besides FS?C (X=Y?, X>Y?, etc.), HP-IL/
 printing, true ENG-format 3-digit-exponent grouping (`vger_state.c`
 currently approximates ENG with plain SCI formatting — see the comment in
@@ -636,6 +671,7 @@ Printed at harness startup too (`vger_print_keymap_legend()` in
 | Tab | X<>Y |
 | Delete | CLX |
 | `L` | LASTX |
+| `I` | IND (indirect prefix; press right after an opcode key, before its digits — no effect after LBL) |
 | F1 / F2 / F3 / F4 | STO / RCL / GTO / LBL (each followed by 2 digits) |
 | F5 / F6 / F7 | SF / CF / FS?C (each followed by 2 digits) |
 | F8 / F9 | ASTO / ARCL (each followed by 2 digits) |
@@ -667,10 +703,12 @@ harness, desktop unit test suite. All architecture principles proven
 end-to-end without any hardware dependency.
 
 **Since milestone 1:** XEQ/RTN subroutine calls (bounded call stack, see
-"Subroutines" above), CI (GitHub Actions, Ubuntu + macOS, `.github/workflows/ci.yml`).
+"Subroutines" above), CI (GitHub Actions, Ubuntu + macOS,
+`.github/workflows/ci.yml`), indirect addressing (IND, see "Indirect
+addressing" above).
 
 **Deferred work, in rough likely order:**
-1. Indirect addressing, comparison/skip instructions beyond FS?C.
+1. Comparison/skip instructions beyond FS?C (X=Y?, X>Y?, etc.).
 2. True ENG-format display, BCD-faithful numeric semantics if a program's
    correctness turns out to depend on it.
 3. The MENU/system-menu layer itself (principle 2: on top of the core).

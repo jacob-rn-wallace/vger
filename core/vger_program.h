@@ -38,6 +38,10 @@ typedef struct {
     double number_value; /**< Valid iff kind == VGER_STEP_NUMBER_LITERAL. */
     char alpha_value[VGER_ALPHA_BUFFER_LEN]; /**< Valid iff kind == VGER_STEP_ALPHA_LITERAL; NUL-terminated. */
     int int_arg; /**< Valid for the *_ARG kinds. */
+    bool indirect; /**< Valid for the *_ARG kinds except LBL: if true,
+                     *   int_arg names a storage register whose (truncated)
+                     *   numeric contents are the real argument, resolved at
+                     *   execution time - not int_arg itself. */
 } vger_program_step_t;
 
 /** @brief A full program: a bounded, statically-sized array of steps. */
@@ -52,6 +56,10 @@ void vger_program_clear(vger_program_t *program);
 /**
  * @brief Parse a text-format FOCAL program into program, replacing any
  * existing contents.
+ *
+ * Any argument-taking mnemonic except LBL accepts an indirect form:
+ * `STO IND 05` stores into whatever register 05's numeric contents name,
+ * rather than register 05 itself (see vger_program_step_t.indirect).
  *
  * @param text NUL-terminated source text, one instruction per line.
  * @param program Destination; cleared before parsing, untouched on failure.

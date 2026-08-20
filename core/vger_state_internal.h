@@ -64,6 +64,9 @@ struct vger_state {
     vger_key_id_t awaiting_argument_for;
     char argument_digits[3];
     int argument_digit_count;
+    bool awaiting_argument_indirect; /**< IND was pressed: the 2 digits
+                                       *   being collected name a pointer
+                                       *   register, not the target itself. */
 
     /* Program storage and execution. */
     vger_program_t program;

@@ -124,6 +124,66 @@ static void test_sto_rcl(void)
     CHECK(name, vger_get_storage_kind(state, 5) == VGER_REG_NUMERIC, "register 05 should be numeric");
 }
 
+static void test_indirect_sto_rcl(void)
+{
+    const char *name = "test_indirect_sto_rcl";
+    vger_state_t *state = vger_state_get();
+    vger_state_reset(state);
+
+    vger_press_digit(state, 2);
+    vger_press_digit(state, 0);
+    vger_press(state, VGER_KEY_STO);
+    vger_press_two_digit_arg(state, 5); /* register 05 = 20 (the pointer) */
+
+    vger_press_digit(state, 4);
+    vger_press_digit(state, 2);
+    vger_press(state, VGER_KEY_STO);
+    vger_press(state, VGER_KEY_IND);
+    vger_press_two_digit_arg(state, 5); /* STO IND 05: really stores into register 20 */
+
+    CHECK_NEAR(name, vger_get_storage_numeric(state, 20), 42.0, "STO IND 05 should store into register 20 (05's contents)");
+    CHECK_NEAR(name, vger_get_storage_numeric(state, 5), 20.0, "register 05 itself (the pointer) should be untouched");
+
+    vger_press(state, VGER_KEY_CLX);
+    vger_press(state, VGER_KEY_RCL);
+    vger_press(state, VGER_KEY_IND);
+    vger_press_two_digit_arg(state, 5); /* RCL IND 05: really recalls from register 20 */
+
+    CHECK_NEAR(name, vger_get_x(state), 42.0, "RCL IND 05 should recall register 20's contents");
+}
+
+static void test_indirect_gto(void)
+{
+    const char *name = "test_indirect_gto";
+    vger_state_t *state = vger_state_get();
+    vger_state_reset(state);
+
+    const char *source = "LBL 01\n"
+                          "2\n"
+                          "STO 07\n"
+                          "GTO IND 07\n"
+                          "STO 99\n"
+                          "LBL 02\n"
+                          "9\n"
+                          "STO 98\n"
+                          "END\n";
+
+    vger_program_t program;
+    char err[128];
+    bool parsed = vger_program_parse_text(source, &program, err, sizeof(err));
+    CHECK(name, parsed, err);
+    if (!parsed) {
+        return;
+    }
+
+    vger_state_load_program(state, &program);
+    vger_press(state, VGER_KEY_RUN_STOP);
+
+    CHECK_NEAR(name, vger_get_storage_numeric(state, 98), 9.0, "GTO IND 07 should jump to LBL 02 (07 holds 2)");
+    CHECK(name, vger_get_storage_kind(state, 99) == VGER_REG_NUMERIC && vger_get_storage_numeric(state, 99) == 0.0,
+          "register 99 should be untouched: GTO IND jumped over the STO 99 step");
+}
+
 static void test_asto_arcl(void)
 {
     const char *name = "test_asto_arcl";
@@ -306,6 +366,8 @@ int main(void)
     test_program_run_via_text_load();
     test_xeq_rtn_subroutine();
     test_xeq_call_stack_overflow_halts();
+    test_indirect_sto_rcl();
+    test_indirect_gto();
     test_prgm_mode_keystroke_recording();
     test_mode_policy_idle_only();
     test_out_of_band_reset();

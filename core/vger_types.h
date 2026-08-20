@@ -95,6 +95,10 @@ typedef enum {
     VGER_KEY_LASTX,
     VGER_KEY_STO,
     VGER_KEY_RCL,
+    VGER_KEY_IND, /**< Indirect-addressing prefix: press right after an
+                    *  argument-taking opcode (except LBL) so the following
+                    *  2 digits name a pointer register instead of the
+                    *  target directly. */
     VGER_KEY_GTO,
     VGER_KEY_LBL,
     VGER_KEY_XEQ,

@@ -167,9 +167,11 @@ static bool vger_parse_line(const char *line, vger_program_step_t *out_step, con
 
     char mnemonic[VGER_PARSE_LINE_LEN];
     char arg_text[VGER_PARSE_LINE_LEN];
+    char ind_arg_text[VGER_PARSE_LINE_LEN];
     mnemonic[0] = '\0';
     arg_text[0] = '\0';
-    int scanned = sscanf(line, "%31s %31s", mnemonic, arg_text);
+    ind_arg_text[0] = '\0';
+    int scanned = sscanf(line, "%31s %31s %31s", mnemonic, arg_text, ind_arg_text);
     if (scanned < 1) {
         *err = "empty instruction";
         return false;
@@ -184,19 +186,30 @@ static bool vger_parse_line(const char *line, vger_program_step_t *out_step, con
     out_step->kind = entry.kind;
     out_step->opcode = entry.opcode;
 
+    bool is_indirect = (scanned >= 2 && strcmp(arg_text, "IND") == 0);
     bool needs_arg = (entry.kind != VGER_STEP_OPCODE_ONLY);
     if (needs_arg) {
-        if (scanned < 2) {
+        if (is_indirect && entry.opcode == VGER_KEY_LBL) {
+            *err = "LBL does not support IND";
+            return false;
+        }
+        int required_tokens = is_indirect ? 3 : 2;
+        if (scanned < required_tokens) {
             *err = "missing argument";
             return false;
         }
+        const char *numeric_text = is_indirect ? ind_arg_text : arg_text;
         char *end = NULL;
-        long arg = strtol(arg_text, &end, 10);
-        if (end == arg_text || *end != '\0') {
+        long arg = strtol(numeric_text, &end, 10);
+        if (end == numeric_text || *end != '\0') {
             *err = "malformed argument";
             return false;
         }
         out_step->int_arg = (int)arg;
+        out_step->indirect = is_indirect;
+    } else if (scanned >= 2) {
+        *err = "this instruction does not take an argument";
+        return false;
     }
 
     return true;

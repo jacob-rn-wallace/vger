@@ -303,8 +303,10 @@ static bool vger_lookup_arg_spec(vger_key_id_t key, vger_arg_spec_entry_t *out)
 }
 
 /** @brief Commit a fully-formed instruction: record it if in PRGM mode,
- *  execute it immediately if in RUN mode. */
-static void vger_commit_instruction(vger_state_t *state, vger_step_kind_t kind, vger_key_id_t opcode, int int_arg)
+ *  execute it immediately if in RUN mode. If indirect, int_arg names a
+ *  pointer register rather than the target itself (see
+ *  vger_program_step_t.indirect and vger_resolve_arg()). */
+static void vger_commit_instruction(vger_state_t *state, vger_step_kind_t kind, vger_key_id_t opcode, int int_arg, bool indirect)
 {
     VGER_ASSERT(state != NULL);
 
@@ -313,6 +315,7 @@ static void vger_commit_instruction(vger_state_t *state, vger_step_kind_t kind, 
     step.kind = kind;
     step.opcode = opcode;
     step.int_arg = int_arg;
+    step.indirect = indirect;
 
     if (state->calc_mode == VGER_CALC_MODE_PRGM) {
         if (state->program.step_count < VGER_PROGRAM_MAX_LINES) {
@@ -331,7 +334,14 @@ static void vger_commit_instruction(vger_state_t *state, vger_step_kind_t kind, 
 }
 
 /** @brief Handle a digit key while an argument (STO nn, GTO nn, ...) is
- *  pending. A non-digit key cancels the pending instruction instead. */
+ *  pending. A non-digit key cancels the pending instruction instead.
+ *
+ *  When state->awaiting_argument_indirect is set (IND was pressed right
+ *  after the opcode key), the digits collected always name a pointer
+ *  register (2 digits, 00-99) regardless of the opcode's normal argument
+ *  shape - e.g. "FIX IND 05" needs 2 digits for register 05, even though
+ *  a direct "FIX 5" only needs 1.
+ */
 static void vger_handle_argument_digit_or_abort(vger_state_t *state, vger_key_event_t event)
 {
     VGER_ASSERT(state != NULL);
@@ -340,28 +350,32 @@ static void vger_handle_argument_digit_or_abort(vger_state_t *state, vger_key_ev
     if (event.id < VGER_KEY_DIGIT_0 || event.id > VGER_KEY_DIGIT_9) {
         state->awaiting_argument = false;
         state->argument_digit_count = 0;
+        state->awaiting_argument_indirect = false;
         return;
     }
 
     vger_arg_spec_entry_t spec;
     bool found = vger_lookup_arg_spec(state->awaiting_argument_for, &spec);
     VGER_ASSERT(found);
+    int required_digits = state->awaiting_argument_indirect ? 2 : spec.digit_count;
 
     char digit_ch = (char)('0' + (event.id - VGER_KEY_DIGIT_0));
     state->argument_digits[state->argument_digit_count] = digit_ch;
     state->argument_digit_count++;
 
-    if (state->argument_digit_count < spec.digit_count) {
+    if (state->argument_digit_count < required_digits) {
         return;
     }
 
     state->argument_digits[state->argument_digit_count] = '\0';
     int arg_value = (int)strtol(state->argument_digits, NULL, 10);
     vger_key_id_t opcode = state->awaiting_argument_for;
+    bool indirect = state->awaiting_argument_indirect;
 
     state->awaiting_argument = false;
     state->argument_digit_count = 0;
-    vger_commit_instruction(state, spec.kind, opcode, arg_value);
+    state->awaiting_argument_indirect = false;
+    vger_commit_instruction(state, spec.kind, opcode, arg_value, indirect);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -542,6 +556,28 @@ static void vger_exec_digits_arg(vger_state_t *state, vger_key_id_t opcode, int 
     state->display_digits = digits;
 }
 
+/** @brief Resolve a step's effective integer argument: int_arg directly,
+ *  or - if step->indirect - the truncated numeric contents of storage
+ *  register int_arg. An out-of-range pointer register, or one that
+ *  doesn't hold a number, resolves to -1, which every vger_exec_*_arg
+ *  helper already treats as out of range and no-ops on - so callers don't
+ *  need a separate indirect-specific bounds check. */
+static int vger_resolve_arg(const vger_state_t *state, const vger_program_step_t *step)
+{
+    VGER_ASSERT(state != NULL);
+    VGER_ASSERT(step != NULL);
+    if (!step->indirect) {
+        return step->int_arg;
+    }
+    if (step->int_arg < 0 || step->int_arg >= VGER_NUM_STORAGE_REGS) {
+        return -1;
+    }
+    if (state->storage[step->int_arg].kind != VGER_REG_NUMERIC) {
+        return -1;
+    }
+    return (int)state->storage[step->int_arg].numeric;
+}
+
 static vger_exec_result_t vger_execute_step(vger_state_t *state, const vger_program_step_t *step, int *io_current_line)
 {
     VGER_ASSERT(state != NULL);
@@ -568,16 +604,16 @@ static vger_exec_result_t vger_execute_step(vger_state_t *state, const vger_prog
             vger_exec_opcode_only(state, step->opcode, io_current_line, &result);
             break;
         case VGER_STEP_OPCODE_REG_ARG:
-            vger_exec_reg_arg(state, step->opcode, step->int_arg);
+            vger_exec_reg_arg(state, step->opcode, vger_resolve_arg(state, step));
             break;
         case VGER_STEP_OPCODE_FLAG_ARG:
-            vger_exec_flag_arg(state, step->opcode, step->int_arg, &result);
+            vger_exec_flag_arg(state, step->opcode, vger_resolve_arg(state, step), &result);
             break;
         case VGER_STEP_OPCODE_LABEL_ARG:
-            vger_exec_label_arg(state, step->opcode, step->int_arg, io_current_line, &result);
+            vger_exec_label_arg(state, step->opcode, vger_resolve_arg(state, step), io_current_line, &result);
             break;
         case VGER_STEP_OPCODE_DIGITS_ARG:
-            vger_exec_digits_arg(state, step->opcode, step->int_arg);
+            vger_exec_digits_arg(state, step->opcode, vger_resolve_arg(state, step));
             break;
         default:
             VGER_ASSERT(false);
@@ -680,6 +716,14 @@ void vger_interp_handle_key(vger_state_t *state, vger_key_event_t event)
         }
         return;
     }
+    if (event.id == VGER_KEY_IND) {
+        if (state->awaiting_argument && state->argument_digit_count == 0 &&
+            state->awaiting_argument_for != VGER_KEY_LBL) {
+            state->awaiting_argument_indirect = true;
+        }
+        return; /* otherwise a no-op: not awaiting an argument, digits already
+                  * typed, or LBL (which has no indirect form) */
+    }
     if (state->awaiting_argument) {
         vger_handle_argument_digit_or_abort(state, event);
         return;
@@ -703,5 +747,5 @@ void vger_interp_handle_key(vger_state_t *state, vger_key_event_t event)
         return;
     }
 
-    vger_commit_instruction(state, VGER_STEP_OPCODE_ONLY, event.id, 0);
+    vger_commit_instruction(state, VGER_STEP_OPCODE_ONLY, event.id, 0, false);
 }
