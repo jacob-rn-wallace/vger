@@ -1,0 +1,205 @@
+/**
+ * @file st7920.c
+ * @brief ST7920 8-bit parallel bus driver - see st7920.h for the public
+ *        API and this file's header comment for the porting history.
+ *
+ * Ported from `soynut`'s `firmware/st7920.c` (same author, same
+ * hardware-validated bus sequence and GDRAM addressing - see
+ * DEVIATIONS.md for the license note this port crosses). The only
+ * changes from soynut's version are renaming the public symbols onto
+ * vger's `vger_`/`VGER_` convention and swapping `assert()` for
+ * `VGER_ASSERT()` per this project's own coding conventions
+ * (`core/vger_assert.h` - independent of `-DNDEBUG`, unlike `<assert.h>`).
+ */
+
+#include "st7920.h"
+#include "pins.h"
+
+#include "vger_assert.h"
+
+#include "pico/stdlib.h"
+
+// --- Low-level 8-bit parallel bus ---------------------------------------
+//
+// Confirmed directly against the NHD-14432WG-BTFH-VT datasheet's own
+// "Pin Description - Parallel Interface" table and its 8051 reference
+// code: RS selects instruction(0)/data(1), R/W is fixed 0 (write-only
+// design - tied directly to GND in hardware, no Pico pin at all, so it's
+// never touched here), and E is FALLING-EDGE triggered - the datasheet's
+// own example (Wcom()/Wdata()) sets RS + the data bus, raises E, waits
+// briefly, then drops E to actually latch the byte. That's exactly the
+// sequence below. Verified working on real hardware (solid-fill and
+// checkerboard test patterns) in `soynut/lcd_bringup/` before being
+// carried over here - see pins.h's comment for that history.
+//
+// The GDRAM addressing and command sequence (init timing, address
+// mapping) are ST7920-controller-level facts, not bus-specific, and were
+// cross-checked against a separately hardware-validated reference before
+// soynut adopted them - see soynut/CLAUDE.md.
+
+static const uint DATA_PINS[8] = {
+    VGER_PIN_LCD_DB0, VGER_PIN_LCD_DB1, VGER_PIN_LCD_DB2, VGER_PIN_LCD_DB3,
+    VGER_PIN_LCD_DB4, VGER_PIN_LCD_DB5, VGER_PIN_LCD_DB6, VGER_PIN_LCD_DB7,
+};
+
+#define BUS_DELAY_US 2 // generous vs. the datasheet's ns-scale address/data setup and E pulse-width figures
+
+/**
+ * @brief Latch one byte onto the ST7920's 8-bit parallel bus.
+ *
+ * Sets RS + the 8 data lines, then pulses E (falling-edge triggered -
+ * see the file header note above) to actually latch the byte.
+ *
+ * @param is_data Whether this is a data byte (true) or command (false); drives RS.
+ * @param value   The byte to write.
+ * @param delay_us Extra settle time to wait after the write completes,
+ *                 matching the datasheet's per-instruction execution time.
+ */
+static void write_byte(bool is_data, uint8_t value, uint32_t delay_us)
+{
+    /* E must already be low when a new transaction begins - the
+     * datasheet's falling-edge latch only means something relative to a
+     * preceding high state, and every prior write_byte() call (including
+     * vger_st7920_init()'s own initial gpio_put()) leaves it low on exit. */
+    VGER_ASSERT(gpio_get(VGER_PIN_LCD_E) == 0);
+
+    gpio_put(VGER_PIN_LCD_RS, is_data ? 1 : 0);
+    for (int i = 0; i < 8; i++) {
+        gpio_put(DATA_PINS[i], (value >> i) & 1);
+    }
+    busy_wait_us(BUS_DELAY_US); // address/data setup before E rises
+
+    gpio_put(VGER_PIN_LCD_E, 1);
+    busy_wait_us(BUS_DELAY_US); // E pulse width / data setup before E falls
+    gpio_put(VGER_PIN_LCD_E, 0); // falling edge - this is what actually latches the byte
+    busy_wait_us(BUS_DELAY_US); // data hold time after E falls
+    VGER_ASSERT(gpio_get(VGER_PIN_LCD_E) == 0); // leaves E low, per the precondition above
+
+    busy_wait_us(delay_us);
+}
+
+/**
+ * @brief Send one command byte with the datasheet's default 72us settle time.
+ * @param cmd Command byte (e.g. one of the CMD_* constants below).
+ */
+static inline void write_cmd(uint8_t cmd)
+{
+    write_byte(false, cmd, 72);
+}
+
+/**
+ * @brief Send one data byte with the datasheet's default 72us settle time.
+ * @param data Data byte, typically one GDRAM word-half.
+ */
+static inline void write_data(uint8_t data)
+{
+    write_byte(true, data, 72);
+}
+
+// --- ST7920 instructions -----------------------------------------------
+
+#define CMD_FUNCTION_SET_BASIC             0x30
+#define CMD_FUNCTION_SET_EXTENDED          0x34
+#define CMD_FUNCTION_SET_EXTENDED_GRAPHIC  0x36
+#define CMD_DISPLAY_ON                     0x0C
+#define CMD_ENTRY_MODE                     0x06
+#define CMD_CLEAR                          0x01
+#define CMD_GDRAM_ADDR_BASE                0x80
+
+/**
+ * @brief Set the ST7920's GDRAM write address.
+ *
+ * @param vertical   Row (y), 0 to VGER_LCD_HEIGHT_PX-1 - see
+ *                   vger_st7920_draw_frame()'s comment for why this maps
+ *                   directly with no bank-fold.
+ * @param horizontal Word offset within the row (0-8, 9 words/row).
+ */
+static void set_gdram_addr(uint8_t vertical, uint8_t horizontal)
+{
+    VGER_ASSERT(vertical < VGER_LCD_HEIGHT_PX); /* every real caller passes a y coordinate */
+    VGER_ASSERT(horizontal <= 0x0F);             /* 4-bit field per the datasheet's command layout */
+    write_cmd(CMD_GDRAM_ADDR_BASE | (vertical & 0x3F));
+    write_cmd(CMD_GDRAM_ADDR_BASE | (horizontal & 0x0F));
+}
+
+/**
+ * @brief Configure GPIOs and run the ST7920 power-on init sequence; see the header.
+ */
+void vger_st7920_init(void)
+{
+    VGER_ASSERT(sizeof(DATA_PINS) / sizeof(DATA_PINS[0]) == 8);
+    gpio_init(VGER_PIN_LCD_RS);
+    gpio_init(VGER_PIN_LCD_E);
+    gpio_set_dir(VGER_PIN_LCD_RS, GPIO_OUT);
+    gpio_set_dir(VGER_PIN_LCD_E, GPIO_OUT);
+    for (int i = 0; i < 8; i++) {
+        gpio_init(DATA_PINS[i]);
+        gpio_set_dir(DATA_PINS[i], GPIO_OUT);
+    }
+    gpio_put(VGER_PIN_LCD_E, 0);
+    VGER_ASSERT(gpio_get(VGER_PIN_LCD_E) == 0);
+
+    sleep_ms(40); // power-on delay per datasheet (>40ms)
+
+    // Timing below follows the real ST7920 controller datasheet's own
+    // power-on init flowchart rather than the general instruction-exec-
+    // time table used elsewhere in this file - the flowchart calls for
+    // extra margin at exactly these steps, and that same datasheet states
+    // "ST7920 has no internal instruction buffer area": a command sent
+    // before the controller finishes the previous one is silently
+    // DROPPED, not queued. Under-waiting here can silently break the rest
+    // of the init chain with no way to detect it (no busy-flag read is
+    // possible - R/W is fixed low in this design).
+    write_byte(false, CMD_FUNCTION_SET_BASIC, 150); // datasheet: >100us
+    write_byte(false, CMD_FUNCTION_SET_BASIC, 50);  // datasheet: >37us
+    write_byte(false, CMD_DISPLAY_ON, 150);         // datasheet: >100us
+    write_byte(false, CMD_CLEAR, 12000);            // datasheet: >10ms
+    write_cmd(CMD_ENTRY_MODE);
+
+    write_cmd(CMD_FUNCTION_SET_EXTENDED);
+    write_cmd(CMD_FUNCTION_SET_EXTENDED_GRAPHIC);
+}
+
+/**
+ * @brief Clear the controller's GDRAM directly; see the header.
+ */
+void vger_st7920_clear(void)
+{
+    VGER_ASSERT(VGER_LCD_BYTES_PER_ROW % 2 == 0); /* the write-two-bytes-at-a-time loop below assumes this */
+    VGER_ASSERT(VGER_LCD_HEIGHT_PX > 0);
+    for (uint8_t y = 0; y < VGER_LCD_HEIGHT_PX; y++) {
+        set_gdram_addr(y, 0);
+        for (uint8_t w = 0; w < VGER_LCD_BYTES_PER_ROW / 2; w++) {
+            write_data(0x00);
+            write_data(0x00);
+        }
+    }
+}
+
+// Pixel (144x32) -> GDRAM address mapping.
+//
+// *** CONFIRMED against real hardware in soynut - this is not a guess. ***
+// Cross-checked there against a separate, physically-tested-working
+// reference implementation for this same panel: vertical address 0-31
+// maps directly to y=0-31, no bank-select trick needed - this panel is
+// exactly one "half" of the standard ST7920 128x64 addressing convention.
+// Each row is 9 words (VGER_LCD_BYTES_PER_ROW/2 = 18/2 = 9), covering the
+// full 144px width in one contiguous burst after a single address-set.
+/**
+ * @brief Push a full framebuffer to the controller's GDRAM; see the header.
+ * @param fb VGER_LCD_FB_SIZE bytes, MSB-first per row, row-major, 1bpp.
+ */
+void vger_st7920_draw_frame(const uint8_t *fb)
+{
+    VGER_ASSERT(fb != NULL);
+    VGER_ASSERT(VGER_LCD_BYTES_PER_ROW % 2 == 0); /* see vger_st7920_clear()'s note */
+    for (int y = 0; y < VGER_LCD_HEIGHT_PX; y++) {
+        const uint8_t *row = fb + (size_t)y * VGER_LCD_BYTES_PER_ROW;
+
+        set_gdram_addr((uint8_t)y, 0);
+        for (int w = 0; w < VGER_LCD_BYTES_PER_ROW / 2; w++) {
+            write_data(row[w * 2]);
+            write_data(row[w * 2 + 1]);
+        }
+    }
+}

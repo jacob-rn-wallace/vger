@@ -3,7 +3,14 @@ project(vger C)
 
 option(VGER_ENABLE_STRICT_WARNINGS "Enable pedantic warnings-as-errors on this project's own sources" ON)
 option(VGER_BUILD_HARNESS "Build the desktop SDL2 test harness" ON)
-option(VGER_BUILD_FIRMWARE "Build the Pico 2 firmware target" OFF)
+
+# The Pico 2 firmware target (firmware/) is NOT add_subdirectory()'d from
+# here - it's its own standalone top-level CMake project, built via
+# `cmake -S firmware -B firmware/build`. Reason: the Pico SDK's board/
+# toolchain selection has to happen before firmware/CMakeLists.txt's own
+# project() call, which this already-configured-for-the-host-compiler
+# root project can't hand off to mid-tree. See firmware/CMakeLists.txt's
+# header comment.
 
 set(VGER_STRICT_WARNING_FLAGS
     -Wall -Wextra -Wpedantic -Werror
@@ -29,8 +36,4 @@ add_subdirectory(tests)
 
 if(VGER_BUILD_HARNESS)
     add_subdirectory(harness)
-endif()
-
-if(VGER_BUILD_FIRMWARE)
-    add_subdirectory(firmware)
 endif()

@@ -136,7 +136,13 @@ deliberate, discussed decision:
    dedicated key (F12) that calls `vger_state_reset()` directly, bypassing
    the interpreter entirely.
 
-## Hardware target (future milestone, not yet built)
+## Hardware target (firmware bring-up started — milestone 3, ahead of schedule)
+
+Per "Deferred work" below, milestone 3 (Pico 2 firmware bring-up) was
+started explicitly ahead of milestones 1/2 (ENG-format fidelity, the
+MENU/system-menu layer) on direct author instruction, overriding this
+file's own previously-stated ordering — see "Milestone status" for that
+decision recorded in place.
 
 - MCU: Raspberry Pi Pico 2 (RP2350) — same platform as `soynut`, to reuse
   that toolchain/experience.
@@ -159,41 +165,64 @@ deliberate, discussed decision:
   outer 4 keys behave exactly as the originals; the middle key is MENU,
   shifting the outer 4 into navigation/selection for a system menu.
 
-None of this hardware bring-up exists yet. `firmware/` is an empty
-directory reserved for it. Milestone 1 (this snapshot) is desktop-only.
+Keyboard/reset switch bring-up hasn't started; `firmware/` currently only
+has the display driver port described below. Milestone 1 (the FOCAL core
+itself) remains desktop-only — nothing in `core/` has changed.
 
-### NHD14432/ST7920 driver — `soynut` already has this, don't rebuild it
+### NHD14432/ST7920 driver — ported from `soynut`
 
-`soynut` (`/Users/jake/soynut`, same author; GPL-2.0 as a whole repo,
-from vendoring GPLv2 `emu41gcc` as a load-bearing core dependency — a
-coupling this project's native-reimplementation architecture was
-deliberately designed to avoid, see "Compatibility target" above) already
-has a complete, hardware-validated driver for this exact display part:
-`firmware/st7920.c`/`.h` (low-level 8-bit parallel ST7920 driver) plus
-`pins.h`'s GPIO pin table, with the full bring-up story — level-shifter
-wiring for the 10 parallel signals, an ST7920-vs-NHD-datasheet chip-select
-polarity discrepancy resolved in the controller datasheet's favor, and
-power-on init sequence timing — written up in `soynut/CLAUDE.md` and
-`soynut/DEVLOG.md`, with the actual datasheets in
-`soynut/reference-material/datasheets/` (`ST7920.pdf`,
+`soynut` (`/Users/jake/soynut`, same author; GPL-2.0 as a whole repo, from
+vendoring GPLv2 `emu41gcc` as a load-bearing core dependency — a coupling
+this project's native-reimplementation architecture was deliberately
+designed to avoid, see "Compatibility target" above) already had a
+complete, hardware-validated driver for this exact display part, with the
+full bring-up story — level-shifter wiring for the 10 parallel signals,
+an ST7920-vs-NHD-datasheet chip-select polarity discrepancy resolved in
+the controller datasheet's favor, and power-on init sequence timing —
+written up in `soynut/CLAUDE.md` and `soynut/DEVLOG.md`, with the actual
+datasheets in `soynut/reference-material/datasheets/` (`ST7920.pdf`,
 `NHD-14432WG-BTFH-VT.pdf`). The part supports both 8-bit parallel (the
 active, working path in `soynut`) and 3-wire serial (implemented once,
 now dormant — see `soynut/CLAUDE.md`'s "Direct Pico→LCD serial link"
 history) via a board jumper.
 
-`st7920.c`/`.h` are `soynut`'s own original files, not vendored
-third-party code — so porting them into `vger` when `firmware/` bring-up
-starts is a copyright decision the author can make directly, unlike the
-Nonpareil/DB48X/C47/WouoUI entries above, which are someone else's
-copyleft code. It still crosses from a GPL-2.0 repo into an Apache-2.0
-one, so record the actual port (verbatim copy vs. rewritten from the same
-design) in `DEVIATIONS.md`-style detail when it happens, same as every
-other "code crossed a license boundary" decision in this file — just a
-much lower-friction one than the others, since there's only one
-rights-holder to satisfy. Same caveat as the Sharp-LCD candidates this
-replaces: `st7920.c`/`.h` are the low-level GDRAM/bus layer, not a UI —
-this project's own display/annunciator rendering (principle 1: driven
-entirely through `vger_state.h`'s query API) still sits on top of it.
+That driver is now ported into `firmware/st7920.c`/`.h` and
+`firmware/pins.h`, near-verbatim other than renaming the public symbols
+onto vger's `vger_`/`VGER_` convention and switching `assert()` for
+`VGER_ASSERT()` — see each file's header comment and
+`DEVIATIONS.md`'s "License note" entry for why porting these particular
+three files (soynut's own original code, not third-party code caught up
+in its GPL-2.0 status) was the rights-holder's call to make directly,
+unlike the Nonpareil/DB48X/C47/WouoUI entries above. `firmware/main.c` is
+a minimal bring-up program exercising the ported driver with a
+checkerboard test pattern — the same validation method soynut used on
+real hardware — not a preview of vger's actual display output; that needs
+a font/segment-table rendering layer this project doesn't have yet (see
+"Deferred work" below). `st7920.c`/`.h` are only the low-level GDRAM/bus
+layer, not a UI — this project's own display/annunciator rendering
+(principle 1: driven entirely through `vger_state.h`'s query API) still
+has to sit on top of it once that rendering layer exists.
+
+`firmware/` is its own standalone top-level CMake project (see
+`firmware/CMakeLists.txt`'s header comment for why it can't be
+`add_subdirectory()`'d from the repo-root `CMakeLists.txt` the way
+`core/`/`harness/`/`tests/` are — the Pico SDK's board/toolchain
+selection has to happen before `project()`, which conflicts with a shared
+root already configured for the host compiler). See "Building and
+testing" below for the actual build command.
+
+**Not yet verified:** this port hasn't been confirmed to actually
+cross-compile. `cmake -S firmware -B firmware/build` configures cleanly
+against a local pico-sdk checkout, but the local `arm-none-eabi-gcc`
+toolchain (Homebrew, reinstalled once already trying to fix this) is
+currently being SIGKILLed by what crash reports attribute to macOS
+26.5.2's code-signing monitor, on literally any input — reproduced with a
+one-line `int main(void){return 0;}` file compiled with plain
+`-mcpu=cortex-m33 -mthumb`, nothing specific to this project's code. This
+is a local machine/OS issue, not a vger or soynut code problem (and
+likely affects `soynut`'s own firmware builds too, on this same machine,
+now). Re-run the build once that's resolved, before trusting this port
+compiles as-is.
 
 ## Repository layout
 
@@ -204,7 +233,10 @@ harness/    Desktop SDL2 test harness - milestone 1's proof-of-architecture
             target, not a preview of the real UI.
 tests/      Desktop unit tests exercising core/ directly via synthetic key
             events. No display/keypad hardware needed to run these.
-firmware/   Reserved for the Pico 2 firmware target. Empty for now.
+firmware/   Pico 2 firmware, its own standalone CMake project (see
+            "NHD14432/ST7920 driver" above). Currently just the ported
+            NHD14432/ST7920 display driver plus a checkerboard bring-up
+            test; keyboard/reset switch bring-up hasn't started.
 examples/   Sample text-format FOCAL programs (see "Program text format").
 DEVIATIONS.md  Power-of-10 rule deviations: which rule, what's excepted,
                why, and the boundary of the exception. Same format/spirit
@@ -770,9 +802,21 @@ ctest --test-dir build --output-on-failure   # desktop unit tests (core only)
 
 Requires SDL2 (`brew install sdl2` on macOS) for `harness/` only.
 `core/` and `tests/` have zero dependencies beyond a C17 compiler and can
-be built alone with `-DVGER_BUILD_HARNESS=OFF`. `-DVGER_BUILD_FIRMWARE=ON`
-exists as an option but `firmware/` doesn't have a `CMakeLists.txt` yet —
-don't turn it on until that milestone starts.
+be built alone with `-DVGER_BUILD_HARNESS=OFF`.
+
+`firmware/` is a separate build, not part of the above (see
+"NHD14432/ST7920 driver" above for why):
+
+```sh
+cmake -S firmware -B firmware/build -DPICO_SDK_PATH=/path/to/pico-sdk
+cmake --build firmware/build
+```
+
+Requires the `arm-none-eabi` GCC toolchain and a local
+[pico-sdk](https://github.com/raspberrypi/pico-sdk) checkout (or set
+`PICO_SDK_PATH` in the environment instead of the `-D` flag). As of this
+writing this hasn't been confirmed to actually build here — see
+"NHD14432/ST7920 driver" above's "Not yet verified" note.
 
 `tests/test_core.c` drives the interpreter through synthetic
 `vger_key_event_t` sequences and checks results via the public query API
@@ -833,23 +877,35 @@ end-to-end without any hardware dependency.
 "Subroutines" above), CI (GitHub Actions, Ubuntu + macOS,
 `.github/workflows/ci.yml`), indirect addressing (IND, see "Indirect
 addressing" above), the 8 conditional-skip test instructions (see
-"Conditional-skip tests" above).
+"Conditional-skip tests" above), the NHD14432/ST7920 hardware-target
+switch and matching harness resize (see "Hardware target" above), and a
+first slice of milestone 3 (see below).
+
+**Milestone 3 started ahead of milestones 1/2, on direct instruction:**
+this file previously said "do not start [firmware bring-up] before the
+earlier items are either done or explicitly decided to be skipped." That
+gate existed for a reason (proving the core architecture before hardware
+bring-up begins) but was explicitly overridden by direct author
+instruction ("port the firmware first"), which *is* the "explicitly
+decided" escape hatch this section itself anticipated — recorded here per
+that same standard rather than silently reordered. What's actually
+landed so far is narrow: the NHD14432/ST7920 driver port (see "Hardware
+target"/"NHD14432/ST7920 driver" above), not yet confirmed to compile
+(local toolchain issue, unrelated to this code — see that section's "Not
+yet verified" note), and nothing else in the list below has moved.
 
 **Deferred work, in rough likely order:**
 1. True ENG-format display, BCD-faithful numeric semantics if a program's
    correctness turns out to depend on it.
 2. The MENU/system-menu layer itself (principle 2: on top of the core;
    see "MENU UI design constraints" above for two concrete requirements
-   to design against before/while building it).
-3. Pico 2 firmware bring-up: NHD14432/ST7920 driver (port from `soynut`,
-   see "NHD14432/ST7920 driver" above; the desktop harness's logical
-   canvas and seven-segment renderer already match 144×32, per "Hardware
-   target" above), 5-key matrix input, physical reset switch —
-   `firmware/` is reserved and empty for this.
-
-Do not start on 3 before the earlier items are either done or explicitly
-decided to be skipped — the whole point of milestone 1 was proving the
-core architecture before hardware bring-up begins.
+   to design against before/while building it). Also gates the
+   font/segment-table rendering layer `firmware/main.c` needs before it
+   can show anything besides a bring-up test pattern — see "Hardware
+   target" above.
+3. Rest of Pico 2 firmware bring-up: 5-key matrix input, physical reset
+   switch. The NHD14432/ST7920 driver itself is done (see above); this is
+   what's left.
 
 ## License
 

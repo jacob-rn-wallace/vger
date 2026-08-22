@@ -43,7 +43,9 @@ harness/    Desktop SDL2 test harness (milestone 1's proof-of-architecture
             keystroke.
 tests/      Desktop unit tests exercising the core directly through
             synthetic key events - no display/keypad hardware needed.
-firmware/   Pico 2 firmware target (later milestone; not yet populated).
+firmware/   Pico 2 firmware, its own standalone CMake project (see
+            CLAUDE.md). Currently just the ported NHD14432/ST7920 display
+            driver plus a bring-up test pattern.
 examples/   Sample text-format FOCAL programs.
 ```
 
@@ -85,6 +87,14 @@ Requires SDL2 (`brew install sdl2` on macOS) for the harness; `core/` and
 
 If `clang-tidy` is on `PATH` (e.g. `brew install llvm`), it's wired into
 the build automatically.
+
+`firmware/` is a separate build (requires the `arm-none-eabi` toolchain
+and a [pico-sdk](https://github.com/raspberrypi/pico-sdk) checkout):
+
+```sh
+cmake -S firmware -B firmware/build -DPICO_SDK_PATH=/path/to/pico-sdk
+cmake --build firmware/build
+```
 
 ## Scope
 
