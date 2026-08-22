@@ -144,13 +144,16 @@ deliberate, discussed decision:
   controller), replacing the original 14-segment display. This reverses
   an earlier direction — this file previously targeted the Sharp Memory
   LCD (LS027B7DH01, 400×240) — back onto the exact part `soynut` already
-  drives in hardware; see "NHD14432/ST7920 driver" below. **Not yet done:**
-  the desktop harness's logical render resolution
-  (`VGER_LOGICAL_WIDTH`/`HEIGHT` in `harness/main.c`) and the
-  seven-segment renderer's digit geometry both still assume the old
-  400×240 target and haven't been resized/reworked for a 144×32 canvas —
-  tracked in "Deferred work" below, not done in the same pass as this
-  hardware-target decision.
+  drives in hardware; see "NHD14432/ST7920 driver" below. The desktop
+  harness's logical render resolution (`VGER_LOGICAL_WIDTH`/`HEIGHT` in
+  `harness/main.c`, now 144×32) and the seven-segment renderer's digit
+  geometry (`vger_render_frame()`'s call into `vger_sevenseg_draw_string()`)
+  have been reworked to match: 12 character cells at a 12px pitch exactly
+  fill the 144px width and the annunciator row sits at y=21-25, both
+  borrowed directly from soynut's own measured NHD14432 layout
+  (`soynut/font-tables/hp41_pixel_segment_map.json`,
+  `hp41_annunciator_pixel_map.json`) rather than picked from scratch — see
+  `vger_render_frame()`'s doc comment for the exact numbers.
 - Input: the original top-row 4 keys (ON / USER / PRGM / ALPHA) plus one
   new 5th key where the original overlay latch was. In native mode the
   outer 4 keys behave exactly as the originals; the middle key is MENU,
@@ -839,10 +842,10 @@ addressing" above), the 8 conditional-skip test instructions (see
    see "MENU UI design constraints" above for two concrete requirements
    to design against before/while building it).
 3. Pico 2 firmware bring-up: NHD14432/ST7920 driver (port from `soynut`,
-   see "NHD14432/ST7920 driver" above — including resizing/reworking the
-   desktop harness's logical canvas and seven-segment renderer for
-   144×32, per "Hardware target" above), 5-key matrix input, physical
-   reset switch — `firmware/` is reserved and empty for this.
+   see "NHD14432/ST7920 driver" above; the desktop harness's logical
+   canvas and seven-segment renderer already match 144×32, per "Hardware
+   target" above), 5-key matrix input, physical reset switch —
+   `firmware/` is reserved and empty for this.
 
 Do not start on 3 before the earlier items are either done or explicitly
 decided to be skipped — the whole point of milestone 1 was proving the

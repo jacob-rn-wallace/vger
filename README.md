@@ -36,10 +36,10 @@ core/       FOCAL interpreter core: state/query API, mode-boundary policy,
             builds and runs identically on desktop and (later) Pico 2.
 harness/    Desktop SDL2 test harness (milestone 1's proof-of-architecture
             target). Renders the display line as seven-segment digits in a
-            400x240 canvas - a stand-in size left over from an earlier
-            Sharp Memory LCD target, not yet resized to the current
-            144x32 NHD14432 hardware target (see CLAUDE.md) - and dumps
-            full register/flag/alpha state to the terminal after every
+            144x32 canvas matching the real NHD14432 hardware target, with
+            digit/annunciator geometry borrowed from soynut's own measured
+            layout for that same display (see CLAUDE.md), and dumps full
+            register/flag/alpha state to the terminal after every
             keystroke.
 tests/      Desktop unit tests exercising the core directly through
             synthetic key events - no display/keypad hardware needed.

@@ -5,10 +5,11 @@
  * Purpose: prove the core's architecture (state/query API, swappable
  * mode-boundary policy, out-of-band reset, RUN/PRGM key dispatch) works
  * end to end, before any Pico 2/display/keypad hardware bring-up. Renders
- * the display line as seven-segment digits in a 400x240 logical canvas
- * (matching the real Sharp Memory LCD target's resolution) and dumps full
- * register/flag/alpha state to the terminal after every keystroke, which
- * exercises vger_state.h's query API far more thoroughly than a hand-built
+ * the display line as seven-segment digits in a 144x32 logical canvas
+ * (matching the real NHD14432/ST7920 target's resolution - see
+ * CLAUDE.md's "Hardware target" section) and dumps full register/flag/
+ * alpha state to the terminal after every keystroke, which exercises
+ * vger_state.h's query API far more thoroughly than a hand-built
  * on-screen text font would.
  */
 
@@ -25,9 +26,9 @@
 #include "vger_sevenseg.h"
 #include "vger_state.h"
 
-#define VGER_LOGICAL_WIDTH 400
-#define VGER_LOGICAL_HEIGHT 240
-#define VGER_WINDOW_SCALE 2
+#define VGER_LOGICAL_WIDTH 144
+#define VGER_LOGICAL_HEIGHT 32
+#define VGER_WINDOW_SCALE 6
 #define VGER_MAX_EVENTS_PER_FRAME 256
 #define VGER_DISPLAY_MAX_CHARS 12
 #define VGER_PROGRAM_FILE_MAX_BYTES 32768
@@ -161,7 +162,17 @@ static void vger_handle_keydown(vger_state_t *state, SDL_Scancode scancode)
 }
 
 /** @brief Render one frame: background, seven-segment display line, and
- *  four annunciator squares (PRGM, ALPHA, USER, RUNNING, left to right). */
+ *  four annunciator squares (PRGM, ALPHA, USER, RUNNING, left to right).
+ *
+ * Geometry borrows the real NHD14432 layout soynut already measured off
+ * actual mockup pixels (`soynut/font-tables/hp41_pixel_segment_map.json`,
+ * `hp41_annunciator_pixel_map.json`) rather than picking new numbers from
+ * scratch: 12 character cells at a 12px pitch exactly fill the 144px
+ * width (`cell_width_px` there), and the annunciator row sits at y=21-25.
+ * `vger_sevenseg_draw_string()`'s built-in inter-glyph gap (cell_w/6) is
+ * folded into an 11px glyph width so the resulting advance is still 12px
+ * (11 + 11/6 == 12), reproducing that same 12px pitch through this
+ * renderer's own spacing convention instead of matching it by coincidence. */
 static void vger_render_frame(SDL_Renderer *renderer, const vger_state_t *state)
 {
     VGER_ASSERT(renderer != NULL);
@@ -173,12 +184,12 @@ static void vger_render_frame(SDL_Renderer *renderer, const vger_state_t *state)
 
     char display[VGER_DISPLAY_STRING_LEN];
     (void)vger_get_display_string(state, display, sizeof(display));
-    vger_sevenseg_draw_string(renderer, display, 12, 20, 26, 60, VGER_DISPLAY_MAX_CHARS);
+    vger_sevenseg_draw_string(renderer, display, 0, 2, 11, 18, VGER_DISPLAY_MAX_CHARS);
 
     vger_annunciator_state_t ann = vger_get_annunciators(state);
     bool lit[4] = {ann.prgm_mode, ann.alpha_mode, ann.user_mode, ann.program_running};
     for (int i = 0; i < 4; i++) {
-        SDL_Rect box = {12 + (i * 40), 110, 24, 24};
+        SDL_Rect box = {2 + (i * 16), 21, 8, 5};
         if (lit[i]) {
             (void)SDL_RenderFillRect(renderer, &box);
         } else {

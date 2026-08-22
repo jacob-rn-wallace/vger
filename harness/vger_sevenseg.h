@@ -4,7 +4,7 @@
  *
  * Deliberately not a general text/font renderer: milestone 1 only needs
  * to prove the display-string query drives *something* pixel-based, in a
- * coordinate space that anticipates the real 400x240 Sharp Memory LCD
+ * coordinate space that anticipates the real 144x32 NHD14432/ST7920
  * target. A bitmap alphabet font is out of scope here; the full ALPHA
  * buffer and register/flag state are dumped to the terminal instead (see
  * main.c), which exercises the query API just as thoroughly without a
