@@ -613,79 +613,66 @@ of `vger_key_id_t`. The harness's `vger_keymap_classify()` returns
 result; there is no actual menu system to enter yet (that's future work,
 built on top of the core per principle 2, not inside it).
 
-### MENU UI design constraints (informed by hands-on DB48X/C47 review)
+### MENU UI design constraints
 
 Before the MENU/system-menu layer itself gets built (still future work —
-see "Deferred work" below), two concrete constraints came out of using
-DB48X (HP48/49/50 RPL) and C47 (HP-42S-lineage) firsthand, specifically to
-see what to avoid:
+see "Deferred work" below):
 
-1. **Entry point must stay dedicated and unshifted.** Both DB48X and C47
-   bury menu/system access behind a shift-modified secondary or tertiary
-   key function — in C47's case, literally described in its own docs as
-   "the infamous cycling shift," a workaround for the DM42 having only one
-   physical shift key. vger already avoids this *by construction*:
-   principle 2's dedicated 5th key (replacing the old overlay-latch
-   position) is a first-class entry point at the same level as ON/USER/
-   PRGM/ALPHA, never a shifted function. This constraint is already
-   satisfied by the existing hardware design — nothing to change, just
-   don't compromise it later (e.g. by collapsing MENU onto a shift-layer
-   of an existing key to save a physical key during firmware bring-up).
-2. **Every menu transition needs visible feedback, governed by one
-   consistent motion system — not implemented yet.** Both reference
-   systems flash instantly from one menu screen to the next on selection,
-   with no acknowledgment of what was just pressed and no persistent
-   sense of where you are in the menu tree relative to where you were.
-   The fix isn't "add some animations" bolted on per-screen — it's the
-   same move Material Design makes: define one small internal "physics
-   model" (easing curves, continuity rules, a fixed gesture vocabulary)
-   that governs *every* transition in the system uniformly, so the user
-   builds one intuition that transfers everywhere instead of re-learning
-   each screen. Concretely, whatever renders the eventual menu layer
-   needs:
-   - **Selection feedback** — the pressed softkey should visibly
-     acknowledge the press (e.g. briefly highlight/invert its label)
-     before anything transitions, so cause and effect are connected.
-   - **Positional feedback** — some persistent indication of depth/path
-     in the menu tree (a breadcrumb, a path label, consistent per-depth
-     framing) rather than each screen reading as an unrelated flash-cut.
-   This isn't just a taste preference: vger's target display (the
-   NHD14432, ST7920 controller — see "NHD14432/ST7920 driver" above) has
-   its own onboard GDRAM, so it doesn't carry the Sharp Memory LCD's
-   VCOM-refresh/panel-degradation risk this section used to cite here —
-   but writing only the bytes that actually changed over the 8-bit
-   parallel bus is still cheaper than redrawing the full 144×32 frame on
-   every transition, so the same "don't flash-cut the whole panel"
-   motivation still holds, just for plain bus-bandwidth reasons now
-   rather than a panel-degradation one. A deliberate, visible transition
-   is motivated on both UX and bus-bandwidth fronts.
+1. **Entry point must stay dedicated and unshifted.** Both DB48X (HP48/
+   49/50 RPL) and C47 (HP-42S-lineage), reviewed hands-on specifically to
+   see what to avoid, bury menu/system access behind a shift-modified
+   secondary or tertiary key function — in C47's case, literally
+   described in its own docs as "the infamous cycling shift," a
+   workaround for the DM42 having only one physical shift key. vger
+   already avoids this *by construction*: principle 2's dedicated 5th key
+   (replacing the old overlay-latch position) is a first-class entry
+   point at the same level as ON/USER/PRGM/ALPHA, never a shifted
+   function. This constraint is already satisfied by the existing
+   hardware design — nothing to change, just don't compromise it later
+   (e.g. by collapsing MENU onto a shift-layer of an existing key to save
+   a physical key during firmware bring-up).
 
-   **Reference for what this motion system could look like:** Peng
-   Zhihui's (稚晖君's) MonoUI — an animation framework for monochrome
-   displays (OLED/VFD/e-Paper) licensed exclusively to Xikii for their
-   UltraLink product, never open-sourced; only demo video exists, no code
-   to read. [WouoUI](https://github.com/RQNG/WouoUI) is an unlicensed
-   (all-rights-reserved by default — same reference-only treatment as
-   Nonpareil/DB48X/C47 above, not a source to vendor) open tribute that
-   documents the actual technique in enough detail to be genuinely
-   useful as a study reference:
-   - Non-linear easing applied *uniformly* — lists, popups, even progress
-     bars — not just the primary selection indicator.
-   - **Interruptible, blending transitions**: triggering a new transition
-     before the current one finishes blends into the new target instead
-     of snapping/resetting. Likely the single biggest contributor to
-     "smooth" vs. DB48X/C47's instant flash-cuts.
-   - **Positional continuity** — the direct technique for the
-     "positional feedback" requirement above: a selection indicator's
-     size and position animate back to wherever it was last selected
-     when navigating back up a level, rather than resetting to the top.
-   - **One small, fixed gesture vocabulary reused at every depth** (in
-     WouoUI's rotary-encoder case: rotate to move selection, short-press
-     to select, long-press to go back up one level, every level) — the
-     same "one physics model everywhere" principle applied to input, not
-     just rendering. vger's own input model differs (4 shifted keys +
-     dedicated MENU, not a rotary encoder), but the principle — a fixed,
-     depth-independent gesture set — carries over directly.
+2. **Primary design reference: the HP-28C, not DB48X/C47 or a bespoke
+   motion system.** This is a deliberate change of direction from an
+   earlier version of this section (see item 3 below for what that
+   change tables). The 144×32 NHD14432 target was chosen specifically to
+   pare the design ambition down and force focus — see "Conceptual
+   model" above — so the menu layer's actual structure and behavior
+   should be modeled on what the HP-28C really shipped at almost this
+   exact resolution (137×32), not on DB48X/C47's RPL-menu conventions
+   (a different interaction model on much larger 400×240 hardware) and
+   not on a from-scratch animation system reverse-engineered from
+   unrelated monochrome-display UI frameworks. Concretely still
+   undecided and needing real research before the MENU layer's design is
+   final: how the HP-28C's own menu keys/softkey rows/directory
+   navigation actually behaved firsthand. As "Conceptual model" above
+   already notes, no HP-28C ROM or emulator source is vendored or
+   referenced here — this is a feasibility/behavior precedent to study
+   hands-on (manuals, photos, an emulator if one surfaces) when that work
+   starts, the same way DB48X/C47 were reviewed hands-on rather than
+   read about secondhand, not a code reference to read.
+
+3. **Tabled for now: the Material-Design-style motion system.** An
+   earlier version of this section specified a whole internal "physics
+   model" for menu transitions (uniform non-linear easing, interruptible/
+   blending transitions, a persistent positional-continuity indicator),
+   referencing Peng Zhihui's (稚晖君's) MonoUI (proprietary, licensed
+   exclusively to Xikii, no code to read) and
+   [WouoUI](https://github.com/RQNG/WouoUI) (an unlicensed open tribute
+   documenting the actual technique) as study material. That's explicitly
+   parked, not abandoned: a 144×32 1bpp display doesn't have the pixel
+   budget to do blending/easing/continuity-indicator animation justice,
+   and design effort spent on it now would fight the same "pare down to
+   force focus" reasoning behind picking this display in the first place.
+   Revisit if/when a future hardware revision adopts a display with
+   meaningfully more pixels — at which point WouoUI's documented
+   technique (non-linear easing applied uniformly, interruptible blending
+   transitions instead of snapping, a selection indicator with positional
+   continuity across navigation, one small fixed gesture vocabulary reused
+   at every depth) is still the right starting reference. Until then, any
+   transition feedback the HP-28C-modeled menu layer needs should stay as
+   simple as that display can honestly support (e.g. a brief selection
+   highlight/invert on press) rather than reaching for this.
 
 ## Coding conventions
 
@@ -911,11 +898,12 @@ nothing else in the list below has moved.
 1. True ENG-format display, BCD-faithful numeric semantics if a program's
    correctness turns out to depend on it.
 2. The MENU/system-menu layer itself (principle 2: on top of the core;
-   see "MENU UI design constraints" above for two concrete requirements
-   to design against before/while building it). Also gates the
-   font/segment-table rendering layer `firmware/main.c` needs before it
-   can show anything besides a bring-up test pattern — see "Hardware
-   target" above.
+   see "MENU UI design constraints" above — dedicated entry point is
+   already satisfied, HP-28C is the primary structural reference now, and
+   the Material-Design-style motion system is explicitly tabled pending
+   more pixels). Also gates the font/segment-table rendering layer
+   `firmware/main.c` needs before it can show anything besides a bring-up
+   test pattern — see "Hardware target" above.
 3. Rest of Pico 2 firmware bring-up: 5-key matrix input, physical reset
    switch. The NHD14432/ST7920 driver itself is done (see above); this is
    what's left.
