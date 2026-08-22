@@ -211,18 +211,29 @@ selection has to happen before `project()`, which conflicts with a shared
 root already configured for the host compiler). See "Building and
 testing" below for the actual build command.
 
-**Not yet verified:** this port hasn't been confirmed to actually
-cross-compile. `cmake -S firmware -B firmware/build` configures cleanly
-against a local pico-sdk checkout, but the local `arm-none-eabi-gcc`
-toolchain (Homebrew, reinstalled once already trying to fix this) is
-currently being SIGKILLed by what crash reports attribute to macOS
-26.5.2's code-signing monitor, on literally any input — reproduced with a
-one-line `int main(void){return 0;}` file compiled with plain
-`-mcpu=cortex-m33 -mthumb`, nothing specific to this project's code. This
-is a local machine/OS issue, not a vger or soynut code problem (and
-likely affects `soynut`'s own firmware builds too, on this same machine,
-now). Re-run the build once that's resolved, before trusting this port
-compiles as-is.
+**Toolchain note — use the cask, not the Homebrew formula:** the
+Homebrew `arm-none-eabi-gcc` formula's bottle gets ad-hoc re-signed
+during install, which strips ARM's original Developer ID signature off
+`cc1`/`arm-none-eabi-as` and gets those binaries SIGKILLed by macOS's
+code-signing enforcement on any input at all — a real, reproducible
+issue on this machine (confirmed via `codesign -dv`: the formula's `cc1`
+shows `flags=0x2(adhoc)` and no `TeamIdentifier`, unlike a properly
+signed binary), not specific to this project's code. `soynut`'s own
+CLAUDE.md documents the fix already: install the official ARM GNU
+Toolchain **cask** (`gcc-arm-embedded`, ships as a signed `.pkg`) instead
+and extract it with `pkgutil --expand-full` rather than running the
+installer, then point `PATH` at
+`<dest>/toolchain/extracted/Payload/bin`. Confirmed working: with that
+toolchain, `cmake -S firmware -B firmware/build
+-DPICO_SDK_PATH=/path/to/pico-sdk && cmake --build firmware/build`
+produces a full `vger_firmware.uf2` and the rest of the Pico SDK's usual
+outputs (`.elf`, `.hex`, `.dis`, `.map`), building `core/` cross-compiled
+for RP2350 alongside `firmware/`'s own two files. Caught one real
+portability bug doing this: `vger_mode_policy_may_enter_menu()`'s
+`policy >= 0` half of its bounds check is always true under GCC/ARM
+(that enum gets an unsigned underlying type there, unlike desktop
+clang) — fixed by dropping the always-true half; see the function's
+comment.
 
 ## Repository layout
 
@@ -814,9 +825,11 @@ cmake --build firmware/build
 
 Requires the `arm-none-eabi` GCC toolchain and a local
 [pico-sdk](https://github.com/raspberrypi/pico-sdk) checkout (or set
-`PICO_SDK_PATH` in the environment instead of the `-D` flag). As of this
-writing this hasn't been confirmed to actually build here — see
-"NHD14432/ST7920 driver" above's "Not yet verified" note.
+`PICO_SDK_PATH` in the environment instead of the `-D` flag) — see
+"NHD14432/ST7920 driver" above's "Toolchain note" for why the Homebrew
+`arm-none-eabi-gcc` formula doesn't work here and what to use instead.
+Confirmed building cleanly (full `vger_firmware.uf2` and friends) with
+the ARM GNU Toolchain cask.
 
 `tests/test_core.c` drives the interpreter through synthetic
 `vger_key_event_t` sequences and checks results via the public query API
@@ -890,9 +903,9 @@ instruction ("port the firmware first"), which *is* the "explicitly
 decided" escape hatch this section itself anticipated — recorded here per
 that same standard rather than silently reordered. What's actually
 landed so far is narrow: the NHD14432/ST7920 driver port (see "Hardware
-target"/"NHD14432/ST7920 driver" above), not yet confirmed to compile
-(local toolchain issue, unrelated to this code — see that section's "Not
-yet verified" note), and nothing else in the list below has moved.
+target"/"NHD14432/ST7920 driver" above), confirmed cross-compiling and
+linking cleanly for RP2350 (see that section's "Toolchain note"), and
+nothing else in the list below has moved.
 
 **Deferred work, in rough likely order:**
 1. True ENG-format display, BCD-faithful numeric semantics if a program's

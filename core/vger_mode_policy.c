@@ -22,7 +22,11 @@ static bool vger_policy_idle_only(const vger_state_t *state)
 bool vger_mode_policy_may_enter_menu(vger_mode_policy_id_t policy, const vger_state_t *state)
 {
     VGER_ASSERT(state != NULL);
-    VGER_ASSERT(policy >= 0 && policy < VGER_MODE_POLICY_COUNT);
+    /* No `policy >= 0` half here: enum vger_mode_policy_id_t has no
+     * negative enumerators, so some compilers (e.g. GCC on ARM/AAPCS,
+     * which picks an unsigned underlying type in that case) flag that
+     * comparison as always-true under -Wtype-limits. */
+    VGER_ASSERT(policy < VGER_MODE_POLICY_COUNT);
 
     switch (policy) {
         case VGER_MODE_POLICY_IDLE_ONLY:
