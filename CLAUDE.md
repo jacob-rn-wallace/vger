@@ -30,9 +30,24 @@ calculator projects after space probes — `Cassini` (a separate project: a
 ground-up HP Saturn-CPU-family replica, i.e. HP48/49/50-series, named for
 the probe that orbited Saturn) being the other one so far. `soynut` (an
 HP-41CV replica — its name is unrelated to the space-probe convention) is
-a different related project, on the same Pico 2 + Sharp Memory LCD
-hardware target, whose *architecture conventions* (not name) this project
-draws on — see "Architecture principles" and "Coding conventions" below.
+a different related project, on the same Pico 2 + NHD14432/ST7920
+144×32-display hardware target (see "Hardware target" below), whose
+*architecture conventions* (not name) this project draws on — see
+"Architecture principles" and "Coding conventions" below.
+
+### Conceptual model: an HP-28C's capability on an HP-41C's keyboard
+
+The target isn't just "FOCAL on new hardware" — it's an HP-28C's UI
+ambition (a real menu system, and graphing) delivered through an HP-41C's
+keyboard, with the top row replaced by the 5 soft keys (see "Hardware
+target" below). This is a deliberately achievable bar, not an aspirational
+one: the HP-28C's own display was 137×32 dot-matrix, almost identical to
+the 144×32 target display here, and it shipped a full menu system and
+graphing on that resolution — proof the constraint is tractable, not a
+hope. HP-28C hardware/firmware isn't studied as code anywhere in this
+project (no ROM image or emulator source is vendored or referenced) — it's
+a feasibility precedent, not a code reference, so unlike Nonpareil/DB48X/
+C47/WouoUI below, it carries no licensing weight at all.
 
 ### Compatibility target — what's in scope and what isn't
 
@@ -60,20 +75,23 @@ whatever component copies from it, and that decision (and its scope) must
 be recorded in DEVIATIONS.md-style detail before it happens, not
 discovered after the fact.
 
-Two other projects sit in the same reference-only category, relevant to
-the eventual Pico 2/Sharp-LCD firmware milestone rather than to `core/`:
-**DB48X** (LGPL-3.0, <https://github.com/c3d/db48x>), a from-scratch RPL
-runtime in the spirit of HP48/49/50, and **C47** (GPL-3.0,
+Two other projects sit in the same reference-only category, useful for
+FOCAL-adjacent menu/UI concepts rather than to `core/`: **DB48X**
+(LGPL-3.0, <https://github.com/c3d/db48x>), a from-scratch RPL runtime in
+the spirit of HP48/49/50, and **C47** (GPL-3.0,
 <https://gitlab.com/rpncalculators/c43>), an HP-42S-lineage RPN
 calculator. Both run on SwissMicros DM42/DM32 hardware via SwissMicros'
-DMCP platform SDK, and both render onto the same physical display part
-this project targets — the Sharp LS027B7DH01, 400×240 Memory LCD — so
-their approach to that hardware (partial refresh, alphanumeric/annunciator
-layout, soft-key row rendering on a 1-bit memory LCD) is legitimate study
-material once `firmware/` work starts. Neither is a source of code to
-vendor or adapt: both are copyleft (LGPL-3.0 and GPL-3.0 respectively),
-their UI code is coupled to DMCP (which doesn't exist for the Pico 2), and
-DB48X's RPL object-runtime is conceptually closer to `Cassini` (HP48/49/50
+DMCP platform SDK, rendering onto the Sharp LS027B7DH01, 400×240 Memory
+LCD — a larger, different display than vger's own hardware target (see
+"Hardware target" below), so their pixel-level rendering technique isn't
+directly reusable the way it once looked like it might be. Their
+interaction-model choices (soft-key row layout, menu depth/navigation,
+what's exposed as a shifted vs. dedicated function) are still legitimate
+study material — see "MENU UI design constraints" below, informed by
+hands-on use of both. Neither is a source of code to vendor or adapt:
+both are copyleft (LGPL-3.0 and GPL-3.0 respectively), their UI code is
+coupled to DMCP (which doesn't exist for the Pico 2), and DB48X's RPL
+object-runtime is conceptually closer to `Cassini` (HP48/49/50
 Saturn-family) than to this project's FOCAL model in any case. Same rule
 as Nonpareil: read for ideas, never copy, and any deliberate exception
 gets a DEVIATIONS.md-style writeup before it happens.
@@ -122,10 +140,17 @@ deliberate, discussed decision:
 
 - MCU: Raspberry Pi Pico 2 (RP2350) — same platform as `soynut`, to reuse
   that toolchain/experience.
-- Display: Sharp Memory LCD, 400×240 (LS027B7DH01, same part as `soynut`),
-  replacing the original 14-segment display. The desktop harness's logical
-  render resolution (`VGER_LOGICAL_WIDTH`/`HEIGHT` in `harness/main.c`)
-  already matches this, deliberately.
+- Display: Newhaven NHD-14432WG-BTFH-VT, 144×32 graphic LCD (ST7920
+  controller), replacing the original 14-segment display. This reverses
+  an earlier direction — this file previously targeted the Sharp Memory
+  LCD (LS027B7DH01, 400×240) — back onto the exact part `soynut` already
+  drives in hardware; see "NHD14432/ST7920 driver" below. **Not yet done:**
+  the desktop harness's logical render resolution
+  (`VGER_LOGICAL_WIDTH`/`HEIGHT` in `harness/main.c`) and the
+  seven-segment renderer's digit geometry both still assume the old
+  400×240 target and haven't been resized/reworked for a 144×32 canvas —
+  tracked in "Deferred work" below, not done in the same pass as this
+  hardware-target decision.
 - Input: the original top-row 4 keys (ON / USER / PRGM / ALPHA) plus one
   new 5th key where the original overlay latch was. In native mode the
   outer 4 keys behave exactly as the originals; the middle key is MENU,
@@ -134,33 +159,38 @@ deliberate, discussed decision:
 None of this hardware bring-up exists yet. `firmware/` is an empty
 directory reserved for it. Milestone 1 (this snapshot) is desktop-only.
 
-### Candidate Sharp LCD driver libraries (evaluate when firmware starts)
+### NHD14432/ST7920 driver — `soynut` already has this, don't rebuild it
 
-Two existing Pico-SDK libraries already solve the fiddly part of driving
-this exact display part (LS027B7DH01) — the row-addressed partial-refresh
-SPI protocol and VCOM polarity-inversion timing (the display degrades if
-VCOM isn't toggled periodically) — and are worth a real look before
-writing that driver from scratch:
+`soynut` (`/Users/jake/soynut`, same author; GPL-2.0 as a whole repo,
+from vendoring GPLv2 `emu41gcc` as a load-bearing core dependency — a
+coupling this project's native-reimplementation architecture was
+deliberately designed to avoid, see "Compatibility target" above) already
+has a complete, hardware-validated driver for this exact display part:
+`firmware/st7920.c`/`.h` (low-level 8-bit parallel ST7920 driver) plus
+`pins.h`'s GPIO pin table, with the full bring-up story — level-shifter
+wiring for the 10 parallel signals, an ST7920-vs-NHD-datasheet chip-select
+polarity discrepancy resolved in the controller datasheet's favor, and
+power-on init sequence timing — written up in `soynut/CLAUDE.md` and
+`soynut/DEVLOG.md`, with the actual datasheets in
+`soynut/reference-material/datasheets/` (`ST7920.pdf`,
+`NHD-14432WG-BTFH-VT.pdf`). The part supports both 8-bit parallel (the
+active, working path in `soynut`) and 3-wire serial (implemented once,
+now dormant — see `soynut/CLAUDE.md`'s "Direct Pico→LCD serial link"
+history) via a board jumper.
 
-- [mattwach/pico_sharpmem_display](https://github.com/mattwach/pico_sharpmem_display)
-  (LGPL-2.1, plain C): the closer design fit — explicitly no `malloc()`
-  ("use of dynamic memory allocation is debatable on a resource-limited
-  microcontroller," caller supplies the buffer), layered low/mid/high API,
-  proportional fonts via RLE compression with Python tooling to generate
-  more. Copyleft, so using it (verbatim or as a vendored-by-copy component)
-  is a deliberate call, not a default — same category of decision as the
-  Nonpareil/DB48X/C47 entries above, needing its own DEVIATIONS.md-style
-  writeup if it happens.
-- [Piorkos/sharp-memory-display-driver](https://github.com/Piorkos/sharp-memory-display-driver)
-  (MIT, C++): license-clean, but uses C++ classes and `new` (dynamic
-  allocation) — would need real rework to fit rule 3 (no allocation) and
-  this project's plain-C toolchain before it's usable as anything more
-  than a reference for the SPI/VCOM sequencing.
-
-Neither is a drop-in "UI" — both are the SPI/framebuffer layer underneath
-one, which this project's own display/annunciator rendering (principle 1:
-driven entirely through `vger_state.h`'s query API) would still sit on
-top of either way.
+`st7920.c`/`.h` are `soynut`'s own original files, not vendored
+third-party code — so porting them into `vger` when `firmware/` bring-up
+starts is a copyright decision the author can make directly, unlike the
+Nonpareil/DB48X/C47/WouoUI entries above, which are someone else's
+copyleft code. It still crosses from a GPL-2.0 repo into an Apache-2.0
+one, so record the actual port (verbatim copy vs. rewritten from the same
+design) in `DEVIATIONS.md`-style detail when it happens, same as every
+other "code crossed a license boundary" decision in this file — just a
+much lower-friction one than the others, since there's only one
+rights-holder to satisfy. Same caveat as the Sharp-LCD candidates this
+replaces: `st7920.c`/`.h` are the low-level GDRAM/bus layer, not a UI —
+this project's own display/annunciator rendering (principle 1: driven
+entirely through `vger_state.h`'s query API) still sits on top of it.
 
 ## Repository layout
 
@@ -573,12 +603,16 @@ see what to avoid:
    - **Positional feedback** — some persistent indication of depth/path
      in the menu tree (a breadcrumb, a path label, consistent per-depth
      framing) rather than each screen reading as an unrelated flash-cut.
-   This isn't just a taste preference: vger's target display (Sharp
-   Memory LCD) is happiest with partial refresh over full-panel redraws
-   (see "Candidate Sharp LCD driver libraries" above), so an abrupt
-   full-screen flash-to-next-menu is also the more expensive/visible
-   thing to do on the actual hardware, not only the worse UX. A
-   deliberate, visible transition is motivated on both fronts.
+   This isn't just a taste preference: vger's target display (the
+   NHD14432, ST7920 controller — see "NHD14432/ST7920 driver" above) has
+   its own onboard GDRAM, so it doesn't carry the Sharp Memory LCD's
+   VCOM-refresh/panel-degradation risk this section used to cite here —
+   but writing only the bytes that actually changed over the 8-bit
+   parallel bus is still cheaper than redrawing the full 144×32 frame on
+   every transition, so the same "don't flash-cut the whole panel"
+   motivation still holds, just for plain bus-bandwidth reasons now
+   rather than a panel-degradation one. A deliberate, visible transition
+   is motivated on both UX and bus-bandwidth fronts.
 
    **Reference for what this motion system could look like:** Peng
    Zhihui's (稚晖君's) MonoUI — an animation framework for monochrome
@@ -804,8 +838,11 @@ addressing" above), the 8 conditional-skip test instructions (see
 2. The MENU/system-menu layer itself (principle 2: on top of the core;
    see "MENU UI design constraints" above for two concrete requirements
    to design against before/while building it).
-3. Pico 2 firmware bring-up: Sharp Memory LCD driver, 5-key matrix input,
-   physical reset switch — `firmware/` is reserved and empty for this.
+3. Pico 2 firmware bring-up: NHD14432/ST7920 driver (port from `soynut`,
+   see "NHD14432/ST7920 driver" above — including resizing/reworking the
+   desktop harness's logical canvas and seven-segment renderer for
+   144×32, per "Hardware target" above), 5-key matrix input, physical
+   reset switch — `firmware/` is reserved and empty for this.
 
 Do not start on 3 before the earlier items are either done or explicitly
 decided to be skipped — the whole point of milestone 1 was proving the

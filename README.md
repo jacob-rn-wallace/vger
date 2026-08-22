@@ -18,7 +18,15 @@ hardware ever could. Continues HP's own space-probe calculator naming
 calculator projects after space probes — `Cassini` (a separate project, an
 HP Saturn-CPU-family replica) being the other one so far. `soynut` (an
 HP-41CV replica, unrelated name) is a different related project this
-one's architecture conventions are informed by.
+one's architecture conventions are informed by, and now also its hardware
+display target.
+
+**Conceptual model:** an HP-28C's capability (a real menu system, even
+graphing) delivered through an HP-41C's keyboard, with the top row
+replaced by 5 soft keys. The HP-28C's own display was 137×32 dot-matrix —
+almost identical to this project's 144×32 target — and shipped a full
+menu system and graphing at that resolution, so the target is a proven
+constraint, not a hopeful one. See `CLAUDE.md` for the full reasoning.
 
 ## Layout
 
@@ -28,9 +36,11 @@ core/       FOCAL interpreter core: state/query API, mode-boundary policy,
             builds and runs identically on desktop and (later) Pico 2.
 harness/    Desktop SDL2 test harness (milestone 1's proof-of-architecture
             target). Renders the display line as seven-segment digits in a
-            400x240 canvas matching the real Sharp Memory LCD target, and
-            dumps full register/flag/alpha state to the terminal after
-            every keystroke.
+            400x240 canvas - a stand-in size left over from an earlier
+            Sharp Memory LCD target, not yet resized to the current
+            144x32 NHD14432 hardware target (see CLAUDE.md) - and dumps
+            full register/flag/alpha state to the terminal after every
+            keystroke.
 tests/      Desktop unit tests exercising the core directly through
             synthetic key events - no display/keypad hardware needed.
 firmware/   Pico 2 firmware target (later milestone; not yet populated).
